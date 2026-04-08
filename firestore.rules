@@ -1,0 +1,50 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isTerminal() {
+      return isSignedIn() &&
+             request.auth.token.firebase.sign_in_provider == 'anonymous';
+    }
+
+    // Mitarbeiterliste: Terminal muss lesen können
+    match /employees/{employeeId} {
+      allow read: if true;
+      allow write: if isAdmin(request.resource.data.adminId);
+    }
+
+    // Zeiteinträge
+    match /timeEntries/{timeEntryId} {
+      allow read: if true;
+      allow create: if true;
+
+      allow update, delete: if (
+        isAdmin(resource.data.adminId) ||
+        (
+          isTerminal() &&
+          request.resource.data.adminId == resource.data.adminId
+        )
+      );
+    }
+
+    // Admin-Daten geschützt
+    match /adminUsers/{adminUserId} {
+      allow read, write: if isAdmin(adminUserId);
+    }
+
+    // Dienstplan: Admin schreibt, Terminal liest
+    match /schedules/{scheduleId} {
+      allow read: if isSignedIn();
+      allow create: if isAdmin(request.resource.data.adminId);
+      allow update, delete: if isAdmin(resource.data.adminId);
+    }
+  }
+}

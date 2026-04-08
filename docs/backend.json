@@ -1,0 +1,189 @@
+{
+  "entities": {
+    "Employee": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Employee",
+      "type": "object",
+      "description": "Represents an employee whose work time is tracked by the ZeitScan system.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "adminId": {
+          "type": "string"
+        },
+        "fullName": {
+          "type": "string"
+        },
+        "externalEmployeeId": {
+          "type": "string"
+        },
+        "position": {
+          "type": "string"
+        },
+        "agreedHours": {
+          "type": "number"
+        },
+        "agreedHoursPeriod": {
+          "type": "string",
+          "enum": ["weekly", "monthly"],
+          "description": "The period for which the agreed hours apply."
+        },
+        "overtimeBalance": {
+          "type": "number"
+        },
+        "vacationDays": {
+          "type": "number",
+          "description": "Total vacation days per year."
+        },
+        "sickDays": {
+          "type": "number",
+          "description": "Total sick days recorded."
+        },
+        "isArchived": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "adminId",
+        "fullName",
+        "externalEmployeeId",
+        "createdAt"
+      ]
+    },
+    "TimeEntry": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "TimeEntry",
+      "type": "object",
+      "description": "Represents a single period of work or absence for an employee.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "adminId": {
+          "type": "string"
+        },
+        "employeeId": {
+          "type": "string"
+        },
+        "employeeName": {
+          "type": "string"
+        },
+        "clockInTime": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "clockOutTime": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "exitType": {
+          "type": "string",
+          "enum": ["PAUSE", "END"],
+          "description": "The reason for clocking out (only for WORK entries)."
+        },
+        "entryType": {
+          "type": "string",
+          "enum": ["WORK", "VACATION", "SICK"],
+          "description": "The type of the time entry."
+        },
+        "sourceSystem": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "adminId",
+        "employeeId",
+        "clockInTime",
+        "sourceSystem",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "AdminUser": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "AdminUser",
+      "type": "object",
+      "description": "Represents an administrator.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "email": {
+          "type": "string",
+          "format": "email"
+        },
+        "isPremium": {
+          "type": "boolean"
+        },
+        "trialStartedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "email",
+        "createdAt"
+      ]
+    }
+  },
+  "auth": {
+    "providers": [
+      "password",
+      "anonymous"
+    ]
+  },
+  "firestore": {
+    "structure": [
+      {
+        "path": "/adminUsers/{adminUserId}",
+        "definition": {
+          "entityName": "AdminUser",
+          "schema": {
+            "$ref": "#/backend/entities/AdminUser"
+          },
+          "description": "Admin profiles."
+        }
+      },
+      {
+        "path": "/employees/{employeeId}",
+        "definition": {
+          "entityName": "Employee",
+          "schema": {
+            "$ref": "#/backend/entities/Employee"
+          },
+          "description": "Master list of employees."
+        }
+      },
+      {
+        "path": "/timeEntries/{timeEntryId}",
+        "definition": {
+          "entityName": "TimeEntry",
+          "schema": {
+            "$ref": "#/backend/entities/TimeEntry"
+          },
+          "description": "Individual clock logs and absences."
+        }
+      }
+    ]
+  }
+}

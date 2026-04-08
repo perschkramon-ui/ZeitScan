@@ -1,0 +1,15 @@
+# Settings to manage and configure a Firebase App Hosting backend.
+# https://firebase.google.com/docs/app-hosting/configure
+
+runConfig:
+  # Increase this value if you'd like to automatically spin up
+  # more instances in response to increased traffic.
+  maxInstances: 1
+
+environmentVariables:
+  - variable: STRIPE_PRICE_ID
+    value: price_1SxUSOIUCJK6Wz6hTrGGcsm8
+
+secrets:
+  - variable: STRIPE_SECRET_KEY
+    secret: firestore-stripe-payments-STRIPE_API_KEY
