@@ -110,7 +110,10 @@ import {
   Plus,
   X,
   ShieldAlert,
-  Share2
+  Share2,
+  Copy,
+  MessageCircle,
+  Mail
 } from 'lucide-react';
 import { 
   startOfWeek, 
@@ -855,13 +858,21 @@ function DashboardContent() {
     setIsCustomYearExportOpen(false);
   };
 
-  const handleShareApp = (empId: string) => {
-    const url = window.location.origin + '/ma/' + empId;
-    navigator.clipboard.writeText(url);
-    toast({ 
-      title: "Link kopiert", 
-      description: "App-Link wurde in die Zwischenablage kopiert." 
-    });
+  const handleShareApp = (emp: Employee, method: 'copy' | 'whatsapp' | 'email') => {
+    const url = window.location.origin + '/ma/' + emp.id;
+    const text = `Hallo ${emp.fullName},\nhier ist dein persönlicher Link für die ZeitScan Mitarbeiter-App:\n\n${url}`;
+
+    if (method === 'copy') {
+      navigator.clipboard.writeText(url);
+      toast({ 
+        title: "Link kopiert", 
+        description: "App-Link wurde in die Zwischenablage kopiert." 
+      });
+    } else if (method === 'whatsapp') {
+      window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+    } else if (method === 'email') {
+      window.open(`mailto:?subject=${encodeURIComponent('ZeitScan Mitarbeiter-App')}&body=${encodeURIComponent(text)}`, '_self');
+    }
   };
 
   return (
@@ -1152,14 +1163,35 @@ function DashboardContent() {
                               </TableCell>
                               <TableCell className="text-right">
                                 <div className="flex items-center justify-end gap-1">
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <Button variant="ghost" size="icon" className="h-8 w-8 text-indigo-600" onClick={() => handleShareApp(emp.id)}>
-                                        <Share2 className="w-4 h-4" />
-                                      </Button>
-                                    </TooltipTrigger>
-                                    <TooltipContent>Mitarbeiter-App Link kopieren</TooltipContent>
-                                  </Tooltip>
+                                  <DropdownMenu>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <DropdownMenuTrigger asChild>
+                                          <Button variant="ghost" size="icon" className="h-8 w-8 text-indigo-600">
+                                            <Share2 className="w-4 h-4" />
+                                          </Button>
+                                        </DropdownMenuTrigger>
+                                      </TooltipTrigger>
+                                      <TooltipContent>Mitarbeiter-App Link teilen</TooltipContent>
+                                    </Tooltip>
+                                    <DropdownMenuContent align="end">
+                                      <DropdownMenuLabel>Link teilen</DropdownMenuLabel>
+                                      <DropdownMenuSeparator />
+                                      <DropdownMenuItem onClick={() => handleShareApp(emp, 'whatsapp')}>
+                                        <MessageCircle className="mr-2 h-4 w-4" />
+                                        <span>Über WhatsApp senden</span>
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem onClick={() => handleShareApp(emp, 'email')}>
+                                        <Mail className="mr-2 h-4 w-4" />
+                                        <span>Per E-Mail senden</span>
+                                      </DropdownMenuItem>
+                                      <DropdownMenuSeparator />
+                                      <DropdownMenuItem onClick={() => handleShareApp(emp, 'copy')}>
+                                        <Copy className="mr-2 h-4 w-4" />
+                                        <span>Link in Zwischenablage kopieren</span>
+                                      </DropdownMenuItem>
+                                    </DropdownMenuContent>
+                                  </DropdownMenu>
 
                                   <Tooltip>
                                     <TooltipTrigger asChild>
