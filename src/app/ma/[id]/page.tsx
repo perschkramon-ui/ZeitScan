@@ -88,7 +88,7 @@ function MAAppContent({ id }: { id: string }) {
 
   // 3. Listen to Time Entries (Status & Dashboard)
   useEffect(() => {
-    if (!firestore || !employee) return;
+    if (!firestore || !employee || !auth?.currentUser) return;
     
     // Listen to all entries for status (we limit to start of month to get both status and monthly stats)
     const startOfCurrentMonth = startOfMonth(new Date()).toISOString();
@@ -128,11 +128,11 @@ function MAAppContent({ id }: { id: string }) {
     });
 
     return () => unsubscribe();
-  }, [firestore, employee]);
+  }, [firestore, employee, auth]);
 
   // 4. Listen to Schedules
   useEffect(() => {
-    if (!firestore || !employee) return;
+    if (!firestore || !employee || !auth?.currentUser) return;
     
     const todayStr = format(new Date(), 'yyyy-MM-dd');
     const q = query(
@@ -151,7 +151,7 @@ function MAAppContent({ id }: { id: string }) {
     });
 
     return () => unsubscribe();
-  }, [firestore, employee]);
+  }, [firestore, employee, auth]);
 
   const handleClockAction = (action: 'IN' | 'OUT', exitType?: 'PAUSE' | 'END') => {
     if (!employee || !firestore) return;

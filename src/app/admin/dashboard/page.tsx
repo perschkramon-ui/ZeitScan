@@ -112,8 +112,7 @@ import {
   ShieldAlert,
   Share2,
   Copy,
-  MessageCircle,
-  Mail
+  MessageCircle
 } from 'lucide-react';
 import { 
   startOfWeek, 
