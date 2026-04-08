@@ -109,7 +109,8 @@ import {
   ChevronRight as ChevronRightIcon,
   Plus,
   X,
-  ShieldAlert
+  ShieldAlert,
+  Share2
 } from 'lucide-react';
 import { 
   startOfWeek, 
@@ -854,6 +855,15 @@ function DashboardContent() {
     setIsCustomYearExportOpen(false);
   };
 
+  const handleShareApp = (empId: string) => {
+    const url = window.location.origin + '/ma/' + empId;
+    navigator.clipboard.writeText(url);
+    toast({ 
+      title: "Link kopiert", 
+      description: "App-Link wurde in die Zwischenablage kopiert." 
+    });
+  };
+
   return (
     <TooltipProvider>
       <div className="min-h-screen bg-[#E8EAEF] p-4 sm:p-8">
@@ -1142,6 +1152,15 @@ function DashboardContent() {
                               </TableCell>
                               <TableCell className="text-right">
                                 <div className="flex items-center justify-end gap-1">
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Button variant="ghost" size="icon" className="h-8 w-8 text-indigo-600" onClick={() => handleShareApp(emp.id)}>
+                                        <Share2 className="w-4 h-4" />
+                                      </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>Mitarbeiter-App Link kopieren</TooltipContent>
+                                  </Tooltip>
+
                                   <Tooltip>
                                     <TooltipTrigger asChild>
                                       <Button variant="ghost" size="icon" className="h-8 w-8 text-primary" onClick={() => {

@@ -3,6 +3,7 @@ import './globals.css';
 import { Toaster } from "@/components/ui/toaster"
 import { FirebaseClientProvider } from '@/firebase/client-provider';
 import Script from 'next/script';
+import { PWAInstallPrompt } from '@/components/PWAInstallPrompt';
 
 export const metadata: Metadata = {
   title: 'ZeitScan | Professionelle Zeiterfassung',
@@ -18,11 +19,11 @@ export const metadata: Metadata = {
   },
   icons: {
     icon: [
-      { url: '/icon-192.png', sizes: '192x192', type: 'image/png' },
-      { url: '/icon-512.png', sizes: '512x512', type: 'image/png' },
+      { url: '/icon-192x192.png', sizes: '192x192', type: 'image/png' },
+      { url: '/icon-512x512.png', sizes: '512x512', type: 'image/png' },
     ],
     apple: [
-      { url: '/icon-192.png', sizes: '192x192', type: 'image/png' },
+      { url: '/icon-192x192.png', sizes: '192x192', type: 'image/png' },
     ],
   },
 };
@@ -50,9 +51,23 @@ export default function RootLayout({
         <meta name="mobile-web-app-capable" content="yes" />
       </head>
       <body className="font-body antialiased">
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              window.deferredPWAInstallPrompt = null;
+              window.addEventListener('beforeinstallprompt', function(e) {
+                e.preventDefault();
+                window.deferredPWAInstallPrompt = e;
+                // Dispatch a custom event in case components are already listening
+                window.dispatchEvent(new Event('early-pwa-prompt'));
+              });
+            `
+          }}
+        />
         <FirebaseClientProvider>
           {children}
         </FirebaseClientProvider>
+        <PWAInstallPrompt />
         <Toaster />
         <Script id="register-sw" strategy="afterInteractive">
           {`
