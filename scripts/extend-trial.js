@@ -56,28 +56,34 @@ async function extendTrial(email) {
     console.log(`✅ Kunde gefunden: ${customerData.name || 'Unbekannt'}`);
     console.log(`   UID: ${customerId}`);
     
-    // Aktuelles Trial-Enddatum
-    const currentTrialEnd = customerData.trialEndsAt 
-      ? new Date(customerData.trialEndsAt.toDate ? customerData.trialEndsAt.toDate() : customerData.trialEndsAt)
-      : null;
+    // Aktuelle Trial-Info anzeigen
+    if (customerData.trialStartedAt) {
+      const start = new Date(customerData.trialStartedAt);
+      const now = new Date();
+      const diffMs = now.getTime() - start.getTime();
+      const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+      const currentDaysLeft = Math.max(0, 30 - diffDays);
+      console.log(`\n📅 Aktuelle Trial-Tage übrig: ${currentDaysLeft}`);
+    } else {
+      console.log(`\n📅 Aktuelles trialStartedAt: Nicht gesetzt`);
+    }
     
-    console.log(`\n📅 Aktuelles Trial-Enddatum: ${currentTrialEnd ? currentTrialEnd.toLocaleDateString('de-DE') : 'Nicht gesetzt'}`);
+    // Neues trialStartedAt berechnen (15 Tage zurück, damit 15 Tage übrig bleiben)
+    const newTrialStart = new Date();
+    newTrialStart.setDate(newTrialStart.getDate() - 15);
     
-    // Neues Enddatum berechnen (15 Tage verlängern)
-    const newTrialEnd = new Date(currentTrialEnd || new Date());
-    newTrialEnd.setDate(newTrialEnd.getDate() + 15);
-    
-    console.log(`📅 Neues Trial-Enddatum: ${newTrialEnd.toLocaleDateString('de-DE')}`);
+    console.log(`📅 Neues trialStartedAt: ${newTrialStart.toLocaleDateString('de-DE')}`);
     
     // Datenbank aktualisieren
     await db.collection('adminUsers').doc(customerId).update({
-      trialEndsAt: admin.firestore.Timestamp.fromDate(newTrialEnd),
+      trialStartedAt: newTrialStart.toISOString(),
+      isPremium: true, // Sicherstellen, dass Premium aktiviert ist
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
     
     console.log(`\n✅ Trial-Periode erfolgreich um 15 Tage verlängert!`);
-    console.log(`   Kunde: ${customerData.name || customerData.email}`);
-    console.log(`   Neuer Trial-End: ${newTrialEnd.toLocaleDateString('de-DE', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}\n`);
+    console.log(`   Kunde: ${customerData.email}`);
+    console.log(`   Neuer Trial-Start: ${newTrialStart.toLocaleDateString('de-DE', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}\n`);
     
     process.exit(0);
   } catch (error) {
