@@ -38,9 +38,9 @@ async function extendTrial(email) {
   try {
     console.log(`\n🔍 Suche Kunden mit E-Mail: ${email}`);
     
-    // Kunden in der "customers" Collection suchen
+    // Kunden in der "adminUsers" Collection suchen
     const customersSnapshot = await db
-      .collection('customers')
+      .collection('adminUsers')
       .where('email', '==', email)
       .get();
 
@@ -70,7 +70,7 @@ async function extendTrial(email) {
     console.log(`📅 Neues Trial-Enddatum: ${newTrialEnd.toLocaleDateString('de-DE')}`);
     
     // Datenbank aktualisieren
-    await db.collection('customers').doc(customerId).update({
+    await db.collection('adminUsers').doc(customerId).update({
       trialEndsAt: admin.firestore.Timestamp.fromDate(newTrialEnd),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
