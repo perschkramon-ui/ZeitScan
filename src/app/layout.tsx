@@ -26,6 +26,26 @@ export const metadata: Metadata = {
       { url: '/icon-192x192.png', sizes: '192x192', type: 'image/png' },
     ],
   },
+  keywords: ['Zeiterfassung', 'QR-Code', 'Arbeitszeiterfassung', 'Zeitverfolgung'],
+  authors: [{ name: 'ZeitScan Team' }],
+  creator: 'ZeitScan',
+  category: 'Business',
+  openGraph: {
+    type: 'website',
+    locale: 'de_DE',
+    url: 'https://zeitscan.app',
+    siteName: 'ZeitScan',
+    title: 'ZeitScan | Professionelle Zeiterfassung',
+    description: 'QR-Code basierte Zeiterfassung für moderne Unternehmen.',
+    images: [
+      {
+        url: '/icon-512x512.png',
+        width: 512,
+        height: 512,
+        alt: 'ZeitScan Logo',
+      },
+    ],
+  },
 };
 
 export const viewport: Viewport = {
@@ -49,6 +69,20 @@ export default function RootLayout({
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="application-name" content="ZeitScan" />
+        <meta name="apple-mobile-web-app-title" content="ZeitScan" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta name="msapplication-config" content="/browserconfig.xml" />
+        <meta name="msapplication-TileColor" content="#2200ff" />
+        <meta name="msapplication-tap-highlight" content="no" />
+        <meta name="theme-color" content="#2200ff" media="(prefers-color-scheme: light)" />
+        <meta name="theme-color" content="#2200ff" media="(prefers-color-scheme: dark)" />
+        <link rel="icon" type="image/png" sizes="32x32" href="/icon-192x192.png" />
+        <link rel="icon" type="image/png" sizes="16x16" href="/icon-192x192.png" />
+        <link rel="manifest" href="/manifest.webmanifest" />
+        <link rel="canonical" href="https://zeitscan.app" />
+        <link rel="privacy-policy" href="https://zeitscan.app/privacy" />
+        <link rel="terms-of-service" href="https://zeitscan.app/terms" />
       </head>
       <body className="font-body antialiased">
         <script

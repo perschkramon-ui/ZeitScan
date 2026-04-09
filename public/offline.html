@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Offline - ZeitScan</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px;
+        }
+        
+        .container {
+            text-align: center;
+            background: white;
+            padding: 40px 30px;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 400px;
+        }
+        
+        .icon {
+            font-size: 64px;
+            margin-bottom: 20px;
+            animation: float 3s ease-in-out infinite;
+        }
+        
+        @keyframes float {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+        }
+        
+        h1 {
+            color: #2d3748;
+            font-size: 28px;
+            margin-bottom: 12px;
+        }
+        
+        p {
+            color: #718096;
+            font-size: 16px;
+            line-height: 1.6;
+            margin-bottom: 20px;
+        }
+        
+        .button-group {
+            display: flex;
+            gap: 12px;
+            margin-top: 30px;
+        }
+        
+        button {
+            flex: 1;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+        
+        .primary {
+            background: #2200ff;
+            color: white;
+        }
+        
+        .primary:hover {
+            background: #1a00cc;
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(34, 0, 255, 0.3);
+        }
+        
+        .secondary {
+            background: #e2e8f0;
+            color: #2d3748;
+        }
+        
+        .secondary:hover {
+            background: #cbd5e0;
+            transform: translateY(-2px);
+        }
+        
+        .info {
+            background: #edf2f7;
+            border-left: 4px solid #2200ff;
+            padding: 12px;
+            border-radius: 6px;
+            text-align: left;
+            font-size: 14px;
+            color: #2d3748;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="icon">📡</div>
+        <h1>Keine Verbindung</h1>
+        <p>
+            Du bist derzeit offline. 
+            Bitte überprüfe deine Internetverbindung.
+        </p>
+        
+        <div class="button-group">
+            <button class="primary" onclick="location.reload()">
+                Neues Laden
+            </button>
+            <button class="secondary" onclick="window.history.back()">
+                Zurück
+            </button>
+        </div>
+        
+        <div class="info">
+            <strong>💡 Tipp:</strong> Einige Funktionen könnten offline verfügbar sein, sobald die Verbindung hergestellt ist.
+        </div>
+    </div>
+</body>
+</html>

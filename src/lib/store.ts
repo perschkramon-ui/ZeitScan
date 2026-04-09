@@ -52,3 +52,13 @@ export type ScheduleEntry = {
   note?: string;
   createdAt: string;
 };
+
+export type ChatMessage = {
+  id: string;
+  adminId: string;
+  senderName: string;
+  senderRole: 'empfang' | 'buero';
+  text: string;
+  createdAt: string;
+  readBy: string[]; // array of role identifiers that have read this message
+};

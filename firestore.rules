@@ -10,6 +10,10 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
+    function isSuperAdmin() {
+      return isSignedIn() && request.auth.token.email == 'perschkramon@gmail.com';
+    }
+
     function isTerminal() {
       return isSignedIn() &&
              request.auth.token.firebase.sign_in_provider == 'anonymous';
@@ -18,7 +22,7 @@ service cloud.firestore {
     // Mitarbeiterliste: Terminal muss lesen können
     match /employees/{employeeId} {
       allow read: if true;
-      allow write: if isAdmin(request.resource.data.adminId);
+      allow write: if isAdmin(request.resource.data.adminId) || isSuperAdmin();
     }
 
     // Zeiteinträge
@@ -28,6 +32,7 @@ service cloud.firestore {
 
       allow update, delete: if (
         isAdmin(resource.data.adminId) ||
+        isSuperAdmin() ||
         (
           isTerminal() &&
           request.resource.data.adminId == resource.data.adminId
@@ -35,16 +40,31 @@ service cloud.firestore {
       );
     }
 
-    // Admin-Daten geschützt
+    // Admin-Daten geschützt – SuperAdmin kann alle sehen
     match /adminUsers/{adminUserId} {
-      allow read, write: if isAdmin(adminUserId);
+      allow read: if isAdmin(adminUserId) || isSuperAdmin();
+      allow write: if isAdmin(adminUserId);
     }
 
     // Dienstplan: Admin schreibt, Terminal liest
     match /schedules/{scheduleId} {
       allow read: if isSignedIn();
-      allow create: if isAdmin(request.resource.data.adminId);
-      allow update, delete: if isAdmin(resource.data.adminId);
+      allow create: if isAdmin(request.resource.data.adminId) || isSuperAdmin();
+      allow update, delete: if isAdmin(resource.data.adminId) || isSuperAdmin();
+    }
+
+    // Chat-Nachrichten: Admin, SuperAdmin und Terminal können lesen/schreiben
+    match /chatMessages/{messageId} {
+      allow read: if true;
+      allow create: if true;
+      allow update, delete: if (
+        isAdmin(resource.data.adminId) ||
+        isSuperAdmin() ||
+        (
+          isTerminal() &&
+          request.resource.data.adminId == resource.data.adminId
+        )
+      );
     }
   }
 }

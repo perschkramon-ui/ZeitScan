@@ -353,34 +353,39 @@ function DashboardContent() {
   // QR Code State
   const [qrCodeEmployee, setQrCodeEmployee] = useState<Employee | null>(null);
 
+  const isSuperAdmin = user?.email === 'perschkramon@gmail.com';
+  const [impersonateAdmin, setImpersonateAdmin] = useState<{uid: string, email: string} | null>(null);
+  const [isSupportDialogOpen, setIsSupportDialogOpen] = useState(false);
+  const activeAdminUid = impersonateAdmin?.uid || user?.uid;
+
   const adminDocQuery = useMemoFirebase(() => {
-    if (!firestore || !user?.uid) return null;
-    return doc(firestore, 'adminUsers', user.uid);
-  }, [firestore, user?.uid]);
+    if (!firestore || !activeAdminUid) return null;
+    return doc(firestore, 'adminUsers', activeAdminUid);
+  }, [firestore, activeAdminUid]);
   
   const { data: adminData, isLoading: isAdminLoading } = useDoc<AdminUser>(adminDocQuery);
 
   // Neuer Benutzer: automatisch 30-Tage-Trial starten
   useEffect(() => {
-    if (user?.uid && !user.isAnonymous && !isAdminLoading && !adminData && firestore) {
-      setDocumentNonBlocking(doc(firestore, 'adminUsers', user.uid), {
+    if (activeAdminUid && user && !user.isAnonymous && !isAdminLoading && !adminData && firestore && !impersonateAdmin) {
+      setDocumentNonBlocking(doc(firestore, 'adminUsers', activeAdminUid), {
         email: user.email || '',
         isPremium: true,
         trialStartedAt: new Date().toISOString(),
         createdAt: new Date().toISOString(),
       }, { merge: true });
     }
-  }, [user, adminData, isAdminLoading, firestore]);
+  }, [user, adminData, isAdminLoading, firestore, activeAdminUid, impersonateAdmin]);
 
   // Bestehende Benutzer ohne trialStartedAt: Trial jetzt starten
   useEffect(() => {
-    if (user?.uid && !user.isAnonymous && adminData && !adminData.trialStartedAt && firestore) {
-      updateDocumentNonBlocking(doc(firestore, 'adminUsers', user.uid), {
+    if (activeAdminUid && user && !user.isAnonymous && adminData && !adminData.trialStartedAt && firestore && !impersonateAdmin) {
+      updateDocumentNonBlocking(doc(firestore, 'adminUsers', activeAdminUid), {
         isPremium: true,
         trialStartedAt: new Date().toISOString(),
       });
     }
-  }, [user, adminData, firestore]);
+  }, [user, adminData, firestore, activeAdminUid, impersonateAdmin]);
 
   // Trial-Berechnung: 30 Tage ab trialStartedAt
   const { isFeatureActive, trialDaysLeft, trialExpired } = useMemo(() => {
@@ -393,32 +398,39 @@ function DashboardContent() {
     const daysLeft = Math.max(0, 30 - diffDays);
     const expired = daysLeft <= 0;
     // Wenn Trial abgelaufen und isPremium noch true: automatisch deaktivieren
-    if (expired && adminData.isPremium && firestore && user?.uid) {
-      updateDocumentNonBlocking(doc(firestore, 'adminUsers', user.uid), { isPremium: false });
+    if (expired && adminData.isPremium && firestore && activeAdminUid && !impersonateAdmin) {
+      updateDocumentNonBlocking(doc(firestore, 'adminUsers', activeAdminUid), { isPremium: false });
     }
     return { isFeatureActive: !expired, trialDaysLeft: daysLeft, trialExpired: expired };
-  }, [adminData, firestore, user?.uid]);
+  }, [adminData, firestore, activeAdminUid, impersonateAdmin]);
 
   const employeesQuery = useMemoFirebase(() => {
-    if (!firestore || !user?.uid) return null;
-    return query(collection(firestore, 'employees'), where('adminId', '==', user.uid));
-  }, [firestore, user?.uid]);
+    if (!firestore || !activeAdminUid) return null;
+    return query(collection(firestore, 'employees'), where('adminId', '==', activeAdminUid));
+  }, [firestore, activeAdminUid]);
 
   const { data: employees, isLoading: employeesLoading } = useCollection<Employee>(employeesQuery);
 
   const timeEntriesQuery = useMemoFirebase(() => {
-    if (!firestore || !user?.uid) return null;
-    return query(collection(firestore, 'timeEntries'), where('adminId', '==', user.uid));
-  }, [firestore, user?.uid]);
+    if (!firestore || !activeAdminUid) return null;
+    return query(collection(firestore, 'timeEntries'), where('adminId', '==', activeAdminUid));
+  }, [firestore, activeAdminUid]);
 
   const { data: timeEntries } = useCollection<TimeEntry>(timeEntriesQuery);
 
   const schedulesQuery = useMemoFirebase(() => {
-    if (!firestore || !user?.uid) return null;
-    return query(collection(firestore, 'schedules'), where('adminId', '==', user.uid));
-  }, [firestore, user?.uid]);
+    if (!firestore || !activeAdminUid) return null;
+    return query(collection(firestore, 'schedules'), where('adminId', '==', activeAdminUid));
+  }, [firestore, activeAdminUid]);
 
   const { data: schedules } = useCollection<ScheduleEntry>(schedulesQuery);
+
+  const allAdminsQuery = useMemoFirebase(() => {
+    if (!firestore || !isSuperAdmin) return null;
+    return query(collection(firestore, 'adminUsers'));
+  }, [firestore, isSuperAdmin]);
+
+  const { data: allAdmins } = useCollection<AdminUser>(allAdminsQuery);
 
   const anomaliesMap = useMemo(() => {
     const map = new Map<string, boolean>();
@@ -656,7 +668,7 @@ function DashboardContent() {
   const handleAddEmployee = () => {
     if (!newEmployeeName.trim() || !firestore || !user) return;
     addDocumentNonBlocking(collection(firestore, 'employees'), {
-      adminId: user.uid,
+      adminId: activeAdminUid,
       fullName: newEmployeeName,
       position: newEmployeePosition || 'Mitarbeiter',
       agreedHours: Number(newEmployeeHours) || 40,
@@ -704,7 +716,7 @@ function DashboardContent() {
     }
 
     addDocumentNonBlocking(collection(firestore, 'timeEntries'), {
-      adminId: user.uid,
+      adminId: activeAdminUid,
       employeeId: editingEmployee.id,
       employeeName: editingEmployee.fullName,
       clockInTime: start.toISOString(),
@@ -748,7 +760,7 @@ function DashboardContent() {
     const date = startOfDay(parseISO(logAbsenceDate));
     
     addDocumentNonBlocking(collection(firestore, 'timeEntries'), {
-      adminId: user.uid,
+      adminId: activeAdminUid,
       employeeId: viewingLogsEmployee.id,
       employeeName: viewingLogsEmployee.fullName,
       clockInTime: date.toISOString(),
@@ -789,7 +801,7 @@ function DashboardContent() {
     const emp = employees?.find(e => e.id === shiftEmployee);
     if (!emp) return;
     addDocumentNonBlocking(collection(firestore, 'schedules'), {
-      adminId: user.uid,
+      adminId: activeAdminUid,
       employeeId: emp.id,
       employeeName: emp.fullName,
       date: shiftDate,
@@ -810,7 +822,7 @@ function DashboardContent() {
   };
 
   const handleDeleteAllData = () => {
-    if (!firestore || !user?.uid || !employees || !timeEntries) return;
+    if (!firestore || !activeAdminUid || !employees || !timeEntries) return;
     
     timeEntries.forEach(entry => {
       deleteDocumentNonBlocking(doc(firestore, 'timeEntries', entry.id));
@@ -818,12 +830,38 @@ function DashboardContent() {
     employees.forEach(emp => {
       deleteDocumentNonBlocking(doc(firestore, 'employees', emp.id));
     });
+    if (schedules) {
+      schedules.forEach(sched => {
+        deleteDocumentNonBlocking(doc(firestore, 'schedules', sched.id));
+      });
+    }
     
-    toast({ 
-      title: "Bereinigung abgeschlossen", 
-      description: "Alle Mitarbeiterdaten wurden gelöscht.",
-      variant: "destructive"
+    toast({
+      title: "Daten gelöscht",
+      description: "Alle Mitarbeiter und Zeitprotokolle wurden entfernt."
     });
+  };
+
+  const handleSubscribe = async () => {
+    if (!user || !activeAdminUid) return;
+    try {
+      setIsCheckoutLoading(true);
+      const res = await fetch('/api/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: activeAdminUid, email: impersonateAdmin?.email || adminData?.email || user.email })
+      });
+      const data = await res.json();
+      if (data.url) {
+        window.location.href = data.url;
+      } else {
+        toast({ title: 'Fehler', description: data.error || 'Checkout konnte nicht geladen werden', variant: 'destructive' });
+      }
+    } catch (err) {
+      toast({ title: 'Fehler', description: 'Konnte keine Verbindung zu Stripe herstellen.', variant: 'destructive' });
+    } finally {
+      setIsCheckoutLoading(false);
+    }
   };
 
   const toggleArchive = (emp: Employee) => {
@@ -888,7 +926,18 @@ function DashboardContent() {
               <Link href="/" className="inline-flex items-center text-primary font-medium hover:underline transition-all gap-2 bg-white px-4 py-2 rounded-xl shadow-sm">
                 <ArrowLeft className="w-4 h-4" /> Zurück
               </Link>
-              <div className="flex gap-2">
+              <div className="flex gap-2 items-center">
+                {isSuperAdmin && (
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={() => setIsSupportDialogOpen(true)} 
+                    className={impersonateAdmin ? "bg-amber-100 border-amber-300 text-amber-800 hover:bg-amber-200" : "bg-purple-100 border-purple-300 text-purple-800 hover:bg-purple-200"}
+                  >
+                    <ShieldAlert className="w-4 h-4 mr-2" />
+                    {impersonateAdmin ? `Fremdzugriff: ${impersonateAdmin.email}` : 'Support-Tool'}
+                  </Button>
+                )}
                 <Button variant="ghost" size="sm" onClick={handleLogout} disabled={isLogoutLoading} className="text-muted-foreground hover:text-destructive">
                   {isLogoutLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <LogOut className="w-4 h-4 mr-2" />}
                   Abmelden
@@ -1015,13 +1064,54 @@ function DashboardContent() {
                     <h3 className="text-lg font-bold text-destructive flex items-center gap-2 justify-center md:justify-start">
                       <AlertTriangle className="w-5 h-5" /> Testphase abgelaufen
                     </h3>
-                    <p className="text-sm text-muted-foreground">Ihr 30-Tage-Test ist beendet. Premium-Funktionen sind deaktiviert. Kontaktieren Sie uns, um fortzufahren.</p>
+                    <p className="text-sm text-muted-foreground">Ihr 30-Tage-Test ist beendet. Premium-Funktionen sind deaktiviert. Starten Sie Ihr Abo, um fortzufahren.</p>
                   </div>
+                  <Button 
+                    onClick={handleSubscribe} 
+                    disabled={isCheckoutLoading}
+                    className="bg-green-600 hover:bg-green-700 text-white rounded-xl shadow-lg shrink-0 gap-2"
+                  >
+                    {isCheckoutLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CreditCard className="w-4 h-4" />}
+                    Jetzt Buchen
+                  </Button>
                 </CardContent>
               </Card>
             )}
           </header>
 
+          {!isFeatureActive ? (
+            <Card className="border-none shadow-2xl rounded-3xl overflow-hidden bg-white max-w-3xl mx-auto mt-12 mb-32">
+              <div className="bg-gradient-to-br from-green-600 to-emerald-800 p-12 text-center text-white space-y-6">
+                <div className="w-24 h-24 bg-white/20 rounded-full mx-auto flex items-center justify-center backdrop-blur-sm shadow-inner">
+                  <Lock className="w-12 h-12 text-white" />
+                </div>
+                <h2 className="text-4xl font-bold">ZeitScan Testphase Beendet</h2>
+                <p className="text-green-50 text-lg max-w-lg mx-auto leading-relaxed">
+                  Ihre 30-tägige Testphase ist offiziell abgelaufen und die Projektfunktionen wurden temporär gesperrt.
+                </p>
+              </div>
+              <CardContent className="p-10 text-center space-y-8">
+                <p className="text-muted-foreground text-lg max-w-md mx-auto">
+                  Sichern Sie sich jetzt unbegrenzten Zugriff auf alle Premium-Funktionen, das Mitarbeiter-Terminal und Ihre erfassten Daten, indem Sie auf den ZeitScan Pro-Plan upgraden.
+                </p>
+                
+                <Button 
+                  size="lg" 
+                  onClick={handleSubscribe} 
+                  disabled={isCheckoutLoading} 
+                  className="rounded-full w-full max-w-sm h-16 text-lg font-bold shadow-xl hover:shadow-2xl transition-all border-4 border-green-100 bg-green-600 hover:bg-green-700 hover:scale-105 mx-auto flex"
+                >
+                  {isCheckoutLoading ? <Loader2 className="w-6 h-6 animate-spin mr-2" /> : <CreditCard className="w-6 h-6 mr-2" />}
+                  Pro Plan abonnieren
+                  <ArrowRight className="w-5 h-5 ml-2" />
+                </Button>
+                
+                <p className="text-sm text-muted-foreground pt-4">
+                  Sichere Bezahlung über Stripe.
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
           <Tabs defaultValue="personal" className="space-y-8">
             <TabsList className="bg-white/50 p-1.5 rounded-2xl h-14 shadow-sm border-none">
               <TabsTrigger value="personal" className="rounded-xl px-6 h-full data-[state=active]:bg-white data-[state=active]:shadow-md">
@@ -1168,16 +1258,11 @@ function DashboardContent() {
                               <TableCell className="text-right">
                                 <div className="flex items-center justify-end gap-1">
                                   <DropdownMenu>
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <DropdownMenuTrigger asChild>
-                                          <Button variant="ghost" size="icon" className="h-8 w-8 text-indigo-600">
-                                            <Share2 className="w-4 h-4" />
-                                          </Button>
-                                        </DropdownMenuTrigger>
-                                      </TooltipTrigger>
-                                      <TooltipContent>Mitarbeiter-App Link teilen</TooltipContent>
-                                    </Tooltip>
+                                    <DropdownMenuTrigger asChild>
+                                      <Button variant="ghost" size="icon" className="h-8 w-8 text-indigo-600">
+                                        <Share2 className="w-4 h-4" />
+                                      </Button>
+                                    </DropdownMenuTrigger>
                                     <DropdownMenuContent align="end">
                                       <DropdownMenuLabel>Link teilen</DropdownMenuLabel>
                                       <DropdownMenuSeparator />
@@ -1450,6 +1535,7 @@ function DashboardContent() {
               </Card>
             </TabsContent>
           </Tabs>
+          )}
         </div>
       </div>
 
@@ -1516,6 +1602,62 @@ function DashboardContent() {
             <Button onClick={handleExecuteYearlyExport} className="rounded-xl w-full">
               Jahresbericht Exportieren
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Super Admin Support Access Dialog */}
+      <Dialog open={isSupportDialogOpen} onOpenChange={setIsSupportDialogOpen}>
+        <DialogContent className="rounded-2xl max-w-lg max-h-[80vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>🦸‍♂️ Fremdzugriff / Support-Modus</DialogTitle>
+            <DialogDescription>
+              Wählen Sie einen Kunden aus, um das System aus seiner Sicht zu laden.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 overflow-y-auto space-y-2 py-4">
+            {impersonateAdmin && (
+              <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl mb-4">
+                <p className="font-bold text-amber-800 text-sm mb-2">Aktuell im Fremdzugriff:</p>
+                <div className="flex items-center justify-between">
+                  <span className="text-amber-900">{impersonateAdmin.email}</span>
+                  <Button size="sm" variant="outline" onClick={() => setImpersonateAdmin(null)} className="rounded-lg">
+                    Zugriff beenden
+                  </Button>
+                </div>
+              </div>
+            )}
+            {!allAdmins || allAdmins.length === 0 ? (
+              <p className="text-center text-muted-foreground py-8">Lade Nutzer...</p>
+            ) : (
+              allAdmins.map((admin) => (
+                <div key={admin.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 bg-white border rounded-xl shadow-sm gap-2 hover:border-primary/50 transition-colors">
+                  <div className="min-w-0">
+                    <p className="font-bold text-sm truncate">{admin.email}</p>
+                    <div className="text-xs text-muted-foreground flex items-center gap-2 mt-1">
+                       {admin.isPremium ? <Badge className="bg-green-100 text-green-700 hover:bg-green-100 border-none px-1 py-0 text-[10px]">Premium</Badge> : <Badge variant="outline" className="text-[10px] px-1 py-0">Basic</Badge>}
+                       <span className="truncate text-[10px]">Erstellt: {admin.createdAt ? format(parseISO(admin.createdAt), 'dd.MM.yyyy') : '-'}</span>
+                    </div>
+                  </div>
+                  <Button 
+                    size="sm" 
+                    className="shrink-0 rounded-lg gap-1 min-w-[120px]" 
+                    disabled={impersonateAdmin?.uid === admin.id || user?.uid === admin.id}
+                    onClick={() => {
+                      setImpersonateAdmin({uid: admin.id, email: admin.email});
+                      setIsSupportDialogOpen(false);
+                      toast({title: "Fremdzugriff gestartet", description: `Sie sehen nun die Daten von ${admin.email}`});
+                    }}
+                  >
+                    <ShieldAlert className="w-3 h-3" /> 
+                    {user?.uid === admin.id ? 'Mein Konto' : (impersonateAdmin?.uid === admin.id ? 'Aktiv' : 'Zugreifen')}
+                  </Button>
+                </div>
+              ))
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setIsSupportDialogOpen(false)} className="w-full rounded-xl">Schließen</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
