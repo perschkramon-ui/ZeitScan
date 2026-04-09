@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useEffect, Suspense } from 'react';
 import Link from 'next/link';
+import { QRCodeSVG } from 'qrcode.react';
 import { 
   Table, 
   TableBody, 
@@ -112,7 +113,8 @@ import {
   ShieldAlert,
   Share2,
   Copy,
-  MessageCircle
+  MessageCircle,
+  QrCode
 } from 'lucide-react';
 import { 
   startOfWeek, 
@@ -347,6 +349,9 @@ function DashboardContent() {
   const [shiftStart, setShiftStart] = useState('08:00');
   const [shiftEnd, setShiftEnd] = useState('17:00');
   const [shiftNote, setShiftNote] = useState('');
+
+  // QR Code State
+  const [qrCodeEmployee, setQrCodeEmployee] = useState<Employee | null>(null);
 
   const adminDocQuery = useMemoFirebase(() => {
     if (!firestore || !user?.uid) return null;
@@ -1176,6 +1181,10 @@ function DashboardContent() {
                                     <DropdownMenuContent align="end">
                                       <DropdownMenuLabel>Link teilen</DropdownMenuLabel>
                                       <DropdownMenuSeparator />
+                                      <DropdownMenuItem onClick={() => setQrCodeEmployee(emp)}>
+                                        <QrCode className="mr-2 h-4 w-4" />
+                                        <span>QR-Code zum Scannen (App)</span>
+                                      </DropdownMenuItem>
                                       <DropdownMenuItem onClick={() => handleShareApp(emp, 'whatsapp')}>
                                         <MessageCircle className="mr-2 h-4 w-4" />
                                         <span>Über WhatsApp senden</span>
@@ -1508,6 +1517,23 @@ function DashboardContent() {
               Jahresbericht Exportieren
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* QR Code Dialog */}
+      <Dialog open={!!qrCodeEmployee} onOpenChange={(o) => (!o) && setQrCodeEmployee(null)}>
+        <DialogContent className="rounded-2xl max-w-sm flex flex-col items-center justify-center p-8 space-y-6">
+          <DialogHeader className="text-center w-full">
+            <DialogTitle>Mitarbeiter-App QR-Code</DialogTitle>
+            <DialogDescription>{qrCodeEmployee?.fullName}</DialogDescription>
+          </DialogHeader>
+          {qrCodeEmployee && (
+             <div className="p-4 bg-white rounded-xl shadow-sm border flex items-center justify-center">
+               <QRCodeSVG value={window.location.origin + '/ma/' + qrCodeEmployee.id} size={200} />
+             </div>
+          )}
+          <p className="text-sm text-center text-muted-foreground mt-4">Mitarbeiter kann diesen Code mit der Smartphone-Kamera scannen, um die Web-App direkt zu öffnen und zu installieren.</p>
+          <Button onClick={() => setQrCodeEmployee(null)} className="w-full rounded-xl">Schließen</Button>
         </DialogContent>
       </Dialog>
 
