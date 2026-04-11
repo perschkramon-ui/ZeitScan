@@ -558,46 +558,127 @@ function DashboardContent() {
     }, { work: 0, vacation: 0, sick: 0 });
   }, [viewingLogsEmployee, timeEntries, logsFilter]);
 
+  const fmtDur = (mins: number) => {
+    const h = Math.floor(Math.abs(mins) / 60);
+    const m = Math.abs(mins) % 60;
+    return `${h}:${String(m).padStart(2, '0')} h`;
+  };
+
+  const buildEmployeeBlock = (emp: Employee, entries: TimeEntry[]) => {
+    const sorted = [...entries].sort((a, b) => a.clockInTime.localeCompare(b.clockInTime));
+
+    // Group by calendar date of clockInTime
+    const byDate = new Map<string, TimeEntry[]>();
+    sorted.forEach(e => {
+      const key = format(parseISO(e.clockInTime), 'yyyy-MM-dd');
+      if (!byDate.has(key)) byDate.set(key, []);
+      byDate.get(key)!.push(e);
+    });
+
+    const HEADER = 'Datum;Wochentag;Kommen;Gehen;Bruttozeit;Pause;Nettoarbeitszeit;Kategorie;Hinweis\n';
+    let rows = '';
+    let totalNetMins = 0;
+    let bookedVacDays = 0;
+    let bookedSickDays = 0;
+
+    [...byDate.keys()].sort().forEach(dateKey => {
+      const dayEntries = byDate.get(dateKey)!;
+      const date = parseISO(dateKey);
+      const dayName = format(date, 'EEEE', { locale: de });
+      const dateStr = format(date, 'dd.MM.yyyy');
+
+      const workEntries = dayEntries
+        .filter(e => !e.entryType || e.entryType === 'WORK')
+        .sort((a, b) => a.clockInTime.localeCompare(b.clockInTime));
+
+      const absenceEntries = dayEntries.filter(e => e.entryType === 'VACATION' || e.entryType === 'SICK');
+
+      // Absences
+      absenceEntries.forEach(e => {
+        const clockOut = e.clockOutTime ? parseISO(e.clockOutTime) : null;
+        const isMultiDay = clockOut && !isSameDay(parseISO(e.clockInTime), clockOut);
+        const dateCellStr = isMultiDay
+          ? `${format(parseISO(e.clockInTime), 'dd.MM.yyyy')} - ${format(clockOut!, 'dd.MM.yyyy')}`
+          : dateStr;
+        const numDays = clockOut ? differenceInDays(clockOut, parseISO(e.clockInTime)) + 1 : 1;
+        const label = e.entryType === 'VACATION' ? 'Urlaub' : 'Krank';
+        rows += `${dateCellStr};${dayName};-;-;-;-;${numDays} Tag(e);${label};\n`;
+        if (e.entryType === 'VACATION') bookedVacDays += numDays;
+        else bookedSickDays += numDays;
+      });
+
+      if (workEntries.length === 0) return;
+
+      const firstIn = parseISO(workEntries[0].clockInTime);
+      const lastEntry = workEntries[workEntries.length - 1];
+      const lastOut = lastEntry.clockOutTime ? parseISO(lastEntry.clockOutTime) : null;
+
+      // Net = sum of each individual work segment
+      let netMins = 0;
+      workEntries.forEach(e => {
+        const inT = parseISO(e.clockInTime);
+        const outT = e.clockOutTime ? parseISO(e.clockOutTime) : new Date();
+        netMins += Math.max(0, differenceInMinutes(outT, inT));
+      });
+
+      const grossMins = lastOut
+        ? differenceInMinutes(lastOut, firstIn)
+        : differenceInMinutes(new Date(), firstIn);
+      const pauseMins = Math.max(0, grossMins - netMins);
+
+      const hint = !lastOut ? 'noch aktiv' : (lastEntry.exitType === 'PAUSE' ? 'endet in Pause' : '');
+
+      rows += `${dateStr};${dayName};${format(firstIn, 'HH:mm')};${lastOut ? format(lastOut, 'HH:mm') : 'offen'};${fmtDur(grossMins)};${pauseMins > 0 ? fmtDur(pauseMins) : '-'};${fmtDur(netMins)};Arbeit;${hint}\n`;
+      totalNetMins += netMins;
+    });
+
+    const totalH = Math.floor(totalNetMins / 60);
+    const totalM = totalNetMins % 60;
+
+    const summary =
+      `;;;;;;;\n` +
+      `GESAMT ${emp.fullName};;;;;;${fmtDur(totalNetMins)};;\n` +
+      `Resturlaub (aktuell): ${emp.vacationDays ?? 0} Tage | Urlaub gebucht: ${bookedVacDays} Tage | Krank gebucht: ${bookedSickDays} Tage\n`;
+
+    return { header: HEADER, rows, summary, totalNetMins, bookedVacDays, bookedSickDays };
+  };
+
+  const triggerDownload = (csv: string, filename: string) => {
+    const BOM = '\uFEFF';
+    const blob = new Blob([BOM + csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', filename);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const handleExportCSV = (emp: Employee) => {
     if (!timeEntries) return;
     try {
-      const empEntries = [...timeEntries]
-        .filter(e => e.employeeId === emp.id)
-        .sort((a, b) => a.clockInTime.localeCompare(b.clockInTime));
+      const empEntries = timeEntries.filter(e => e.employeeId === emp.id);
+      const { header, rows, summary } = buildEmployeeBlock(emp, empEntries);
 
-      let csv = "Datum;Kommen;Gehen;Dauer (h);Kategorie;Beendigung (Pause/Ende)\n";
-      empEntries.forEach(e => {
-        const clockIn = parseISO(e.clockInTime);
-        const clockOut = e.clockOutTime ? parseISO(e.clockOutTime) : null;
-        const entryType = e.entryType || 'WORK';
-        let duration = 0;
-        if (entryType === 'WORK') {
-          duration = clockOut ? differenceInMinutes(clockOut, clockIn) / 60 : 0;
-        } else {
-          const days = clockOut ? differenceInDays(clockOut, clockIn) + 1 : 1;
-          duration = days * 8; 
-        }
-        
-        csv += `${format(clockIn, 'dd.MM.yyyy')};${format(clockIn, 'HH:mm')};${clockOut ? format(clockOut, 'HH:mm') : (entryType === 'WORK' ? 'Offen' : '-')};${duration.toFixed(2)};${entryType};${e.exitType || (entryType === 'WORK' ? 'OFFEN' : '-')}\n`;
-      });
+      let csv = `Mitarbeiter: ${emp.fullName}\n`;
+      csv += `Position: ${emp.position || 'Mitarbeiter'}\n`;
+      csv += `Exportiert am: ${format(new Date(), 'dd.MM.yyyy HH:mm')}\n`;
+      csv += `\n`;
+      csv += header;
+      csv += rows;
+      csv += summary;
 
-      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-      const link = document.createElement("a");
-      const url = URL.createObjectURL(blob);
-      link.setAttribute("href", url);
-      link.setAttribute("download", `ZeitScan_Protokoll_${emp.fullName}_${format(new Date(), 'yyyy-MM-dd')}.csv`);
-      link.style.visibility = 'hidden';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      triggerDownload(csv, `ZeitScan_${emp.fullName}_${format(new Date(), 'yyyy-MM-dd')}.csv`);
     } catch (err) {
-      console.error("Export failed", err);
+      console.error('Export failed', err);
     }
   };
 
   const handleExportAllCSV = (filter: 'month' | 'year' | 'all' | 'custom' | 'custom-year', customDate?: Date) => {
     if (!timeEntries || !employees) return;
-    
+
     try {
       let startDate: Date;
       let endDate: Date;
@@ -620,49 +701,57 @@ function DashboardContent() {
         endDate = new Date(now.getFullYear() + 10, 0, 1);
       }
 
-      const filteredEntries = [...timeEntries]
-        .filter(e => {
-          const d = parseISO(e.clockInTime);
-          return (isAfter(d, startDate) || isSameDay(d, startDate)) && (isBefore(d, endDate) || isSameDay(d, endDate));
-        })
-        .sort((a, b) => a.clockInTime.localeCompare(b.clockInTime));
-
-      let csv = "Mitarbeiter;Datum;Kommen;Gehen;Dauer (h);Kategorie;Beendigung;Resturlaub;Krankheitstage_Gesamt\n";
-      filteredEntries.forEach(e => {
-        const emp = employees.find(emp => emp.id === e.employeeId);
-        const clockIn = parseISO(e.clockInTime);
-        const clockOut = e.clockOutTime ? parseISO(e.clockOutTime) : null;
-        const entryType = e.entryType || 'WORK';
-        let duration = 0;
-        if (entryType === 'WORK') {
-          duration = clockOut ? differenceInMinutes(clockOut, clockIn) / 60 : 0;
-        } else {
-          const days = clockOut ? differenceInDays(clockOut, clockIn) + 1 : 1;
-          duration = days * 8;
-        }
-
-        csv += `${emp?.fullName || 'Unbekannt'};${format(clockIn, 'dd.MM.yyyy')};${format(clockIn, 'HH:mm')};${clockOut ? format(clockOut, 'HH:mm') : (entryType === 'WORK' ? 'Offen' : '-')};${duration.toFixed(2)};${entryType};${e.exitType || (entryType === 'WORK' ? 'OFFEN' : '-')};${emp?.vacationDays || 0};${emp?.sickDays || 0}\n`;
+      const filteredEntries = [...timeEntries].filter(e => {
+        const d = parseISO(e.clockInTime);
+        return (isAfter(d, startDate) || isSameDay(d, startDate)) && (isBefore(d, endDate) || isSameDay(d, endDate));
       });
 
-      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-      const link = document.createElement("a");
-      const url = URL.createObjectURL(blob);
-      link.setAttribute("href", url);
-      
-      let filename = `ZeitScan_Gesamtexport_${filter}_${format(new Date(), 'yyyy-MM-dd')}.csv`;
-      if (filter === 'custom' && customDate) {
-        filename = `ZeitScan_Export_${format(customDate, 'MMMM_yyyy', { locale: de })}.csv`;
-      } else if (filter === 'custom-year' && customDate) {
-        filename = `ZeitScan_Jahresbericht_${format(customDate, 'yyyy')}.csv`;
-      }
-      
-      link.setAttribute("download", filename);
-      link.style.visibility = 'hidden';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      const periodLabel =
+        filter === 'all' ? 'Gesamte Historie' :
+        `${format(startDate, 'dd.MM.yyyy')} - ${format(endDate, 'dd.MM.yyyy')}`;
+
+      let csv = `ZeitScan Gesamtexport\n`;
+      csv += `Zeitraum: ${periodLabel}\n`;
+      csv += `Exportiert am: ${format(now, 'dd.MM.yyyy HH:mm')}\n`;
+      csv += `\n`;
+
+      const activeEmployees = [...employees]
+        .filter(e => !e.isArchived)
+        .sort((a, b) => a.fullName.localeCompare(b.fullName));
+
+      const overviewRows: string[] = [];
+      let grandTotalMins = 0;
+
+      activeEmployees.forEach(emp => {
+        const empEntries = filteredEntries.filter(e => e.employeeId === emp.id);
+        if (empEntries.length === 0) return;
+
+        const { header, rows, summary, totalNetMins, bookedVacDays, bookedSickDays } = buildEmployeeBlock(emp, empEntries);
+
+        csv += `=== ${emp.fullName} | ${emp.position || 'Mitarbeiter'} ===\n`;
+        csv += header;
+        csv += rows;
+        csv += summary;
+        csv += `\n`;
+
+        grandTotalMins += totalNetMins;
+        overviewRows.push(`${emp.fullName};${fmtDur(totalNetMins)};${bookedVacDays} Urlaubstage;${bookedSickDays} Krankheitstage;Resturlaub: ${emp.vacationDays ?? 0} Tage`);
+      });
+
+      csv += `\n`;
+      csv += `=== GESAMTÜBERSICHT ALLE MITARBEITER ===\n`;
+      csv += `Name;Nettoarbeitszeit;Urlaub gebucht;Krank gebucht;Resturlaub\n`;
+      csv += overviewRows.join('\n');
+      csv += `\n`;
+      csv += `GESAMT ALLE;;${fmtDur(grandTotalMins)};;\n`;
+
+      let filename = `ZeitScan_Gesamtexport_${format(now, 'yyyy-MM-dd')}.csv`;
+      if (filter === 'custom' && customDate) filename = `ZeitScan_Export_${format(customDate, 'MMMM_yyyy', { locale: de })}.csv`;
+      else if (filter === 'custom-year' && customDate) filename = `ZeitScan_Jahresbericht_${format(customDate, 'yyyy')}.csv`;
+
+      triggerDownload(csv, filename);
     } catch (err) {
-      console.error("Bulk export failed", err);
+      console.error('Bulk export failed', err);
     }
   };
 
