@@ -82,6 +82,7 @@ import {
   CreditCard,
   Sparkles,
   LogOut,
+  LogIn,
   Mail,
   Lock,
   Circle,
@@ -347,7 +348,7 @@ function DashboardContent() {
   const [shiftEmployee, setShiftEmployee] = useState('');
   const [shiftDate, setShiftDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [shiftStart, setShiftStart] = useState('08:00');
-  const [shiftEnd, setShiftEnd] = useState('17:00');
+  const [shiftEnd, setShiftEnd] = useState('');
   const [shiftNote, setShiftNote] = useState('');
 
   // QR Code State
@@ -797,7 +798,7 @@ function DashboardContent() {
   };
 
   const handleAddShift = () => {
-    if (!shiftEmployee || !shiftDate || !shiftStart || !shiftEnd || !firestore || !user) return;
+    if (!shiftEmployee || !shiftDate || !shiftStart || !firestore || !user) return;
     const emp = employees?.find(e => e.id === shiftEmployee);
     if (!emp) return;
     addDocumentNonBlocking(collection(firestore, 'schedules'), {
@@ -806,13 +807,15 @@ function DashboardContent() {
       employeeName: emp.fullName,
       date: shiftDate,
       shiftStart,
-      shiftEnd,
+      shiftEnd: shiftEnd || '',
       note: shiftNote || '',
       createdAt: new Date().toISOString(),
     });
-    toast({ title: 'Schicht eingetragen', description: `${emp.fullName} am ${format(new Date(shiftDate + 'T00:00'), 'dd.MM.yyyy', { locale: de })} von ${shiftStart} - ${shiftEnd}` });
+    const endLabel = shiftEnd ? ` - ${shiftEnd}` : ' (offenes Ende)';
+    toast({ title: 'Schicht eingetragen', description: `${emp.fullName} am ${format(new Date(shiftDate + 'T00:00'), 'dd.MM.yyyy', { locale: de })} von ${shiftStart}${endLabel}` });
     setIsAddShiftOpen(false);
     setShiftNote('');
+    setShiftEnd('');
   };
 
   const handleDeleteShift = (shift: ScheduleEntry) => {
@@ -884,6 +887,63 @@ function DashboardContent() {
     signOut(auth).then(() => {
       window.location.href = '/';
     }).catch(() => setIsLogoutLoading(false));
+  };
+
+  const handleManualClockIn = (emp: Employee) => {
+    if (!firestore || !user) return;
+    addDocumentNonBlocking(collection(firestore, 'timeEntries'), {
+      adminId: activeAdminUid,
+      employeeId: emp.id,
+      employeeName: emp.fullName,
+      clockInTime: new Date().toISOString(),
+      clockOutTime: null,
+      entryType: 'WORK',
+      exitType: null,
+      sourceSystem: 'Admin-Dashboard (Manuell)',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+    toast({ title: "Eingestempelt", description: `${emp.fullName} wurde eingestempelt.` });
+  };
+
+  const handleManualPause = (emp: Employee) => {
+    if (!firestore || !timeEntries) return;
+    const openEntry = timeEntries
+      .filter(e => e.employeeId === emp.id && (!e.entryType || e.entryType === 'WORK') && !e.clockOutTime)
+      .sort((a, b) => b.clockInTime.localeCompare(a.clockInTime))[0];
+    if (!openEntry) return;
+    updateDocumentNonBlocking(doc(firestore, 'timeEntries', openEntry.id), {
+      clockOutTime: new Date().toISOString(),
+      exitType: 'PAUSE',
+      updatedAt: new Date().toISOString(),
+    });
+    toast({ title: "Pause gesetzt", description: `${emp.fullName} ist jetzt in der Pause.` });
+  };
+
+  const handleManualClockOut = (emp: Employee) => {
+    if (!firestore || !timeEntries) return;
+    const status = statusMap.get(emp.id);
+    const empWorkEntries = timeEntries
+      .filter(e => e.employeeId === emp.id && (!e.entryType || e.entryType === 'WORK'))
+      .sort((a, b) => b.clockInTime.localeCompare(a.clockInTime));
+
+    if (status === 'present') {
+      const openEntry = empWorkEntries.find(e => !e.clockOutTime);
+      if (!openEntry) return;
+      updateDocumentNonBlocking(doc(firestore, 'timeEntries', openEntry.id), {
+        clockOutTime: new Date().toISOString(),
+        exitType: 'END',
+        updatedAt: new Date().toISOString(),
+      });
+    } else if (status === 'pause') {
+      const lastEntry = empWorkEntries[0];
+      if (!lastEntry) return;
+      updateDocumentNonBlocking(doc(firestore, 'timeEntries', lastEntry.id), {
+        exitType: 'END',
+        updatedAt: new Date().toISOString(),
+      });
+    }
+    toast({ title: "Ausgestempelt", description: `${emp.fullName} wurde ausgestempelt.` });
   };
 
   // Stripe-Checkout entfernt — Trial wird intern verwaltet
@@ -1257,6 +1317,49 @@ function DashboardContent() {
                               </TableCell>
                               <TableCell className="text-right">
                                 <div className="flex items-center justify-end gap-1">
+                                  {!emp.isArchived && status !== 'sick' && status !== 'vacation' && (
+                                    <DropdownMenu>
+                                      <DropdownMenuTrigger asChild>
+                                        <Button variant="ghost" size="icon" className="h-8 w-8 text-green-600" title="Stempeluhr">
+                                          <Clock className="w-4 h-4" />
+                                        </Button>
+                                      </DropdownMenuTrigger>
+                                      <DropdownMenuContent align="end">
+                                        <DropdownMenuLabel>Stempeluhr</DropdownMenuLabel>
+                                        <DropdownMenuSeparator />
+                                        {status === 'absent' && (
+                                          <DropdownMenuItem onClick={() => handleManualClockIn(emp)}>
+                                            <LogIn className="mr-2 h-4 w-4 text-green-600" />
+                                            <span>Einstempeln</span>
+                                          </DropdownMenuItem>
+                                        )}
+                                        {status === 'present' && (
+                                          <>
+                                            <DropdownMenuItem onClick={() => handleManualPause(emp)}>
+                                              <Coffee className="mr-2 h-4 w-4 text-amber-600" />
+                                              <span>Pause setzen</span>
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem onClick={() => handleManualClockOut(emp)}>
+                                              <LogOut className="mr-2 h-4 w-4 text-destructive" />
+                                              <span>Ausstempeln</span>
+                                            </DropdownMenuItem>
+                                          </>
+                                        )}
+                                        {status === 'pause' && (
+                                          <>
+                                            <DropdownMenuItem onClick={() => handleManualClockIn(emp)}>
+                                              <Play className="mr-2 h-4 w-4 text-green-600" />
+                                              <span>Pause beenden</span>
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem onClick={() => handleManualClockOut(emp)}>
+                                              <LogOut className="mr-2 h-4 w-4 text-destructive" />
+                                              <span>Schicht beenden</span>
+                                            </DropdownMenuItem>
+                                          </>
+                                        )}
+                                      </DropdownMenuContent>
+                                    </DropdownMenu>
+                                  )}
                                   <DropdownMenu>
                                     <DropdownMenuTrigger asChild>
                                       <Button variant="ghost" size="icon" className="h-8 w-8 text-indigo-600">
@@ -1430,7 +1533,7 @@ function DashboardContent() {
                                     {dayShifts.map(shift => (
                                       <div key={shift.id} className="bg-primary text-primary-foreground rounded-lg px-2 py-1 text-[10px] font-medium flex items-start justify-between gap-1 group/shift">
                                         <div>
-                                          <div className="font-bold">{shift.shiftStart}–{shift.shiftEnd}</div>
+                                          <div className="font-bold">{shift.shiftStart}{shift.shiftEnd ? `–${shift.shiftEnd}` : ' →'}</div>
                                           {shift.note && <div className="opacity-80 truncate max-w-[80px]">{shift.note}</div>}
                                         </div>
                                         <button
@@ -2003,15 +2106,15 @@ function DashboardContent() {
       </Dialog>
       {/* Add Shift Dialog */}
       <Dialog open={isAddShiftOpen} onOpenChange={setIsAddShiftOpen}>
-        <DialogContent className="rounded-2xl max-w-md">
-          <DialogHeader>
+        <DialogContent className="rounded-2xl max-w-md max-h-[90vh] flex flex-col overflow-hidden">
+          <DialogHeader className="shrink-0">
             <DialogTitle className="flex items-center gap-2">
               <CalendarCheck2 className="w-5 h-5 text-primary" />
               Schicht eintragen
             </DialogTitle>
             <DialogDescription>Planen Sie einen Mitarbeiter für eine Schicht ein.</DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
+          <div className="space-y-4 py-4 overflow-y-auto flex-1 pr-1">
             <div className="space-y-2">
               <Label>Mitarbeiter</Label>
               <Select value={shiftEmployee} onValueChange={setShiftEmployee}>
@@ -2034,23 +2137,49 @@ function DashboardContent() {
                 className="rounded-xl"
               />
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Schichtbeginn</Label>
+            <div className="space-y-2">
+              <Label>Schichtbeginn</Label>
+              <div className="relative">
+                <Play className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-green-600" />
                 <Input
                   type="time"
                   value={shiftStart}
                   onChange={e => setShiftStart(e.target.value)}
-                  className="rounded-xl"
+                  className="rounded-xl pl-9"
                 />
               </div>
-              <div className="space-y-2">
-                <Label>Schichtende</Label>
+            </div>
+            {shiftStart && shiftEnd && (() => {
+              const [sh, sm] = shiftStart.split(':').map(Number);
+              const [eh, em] = shiftEnd.split(':').map(Number);
+              const mins = (eh * 60 + em) - (sh * 60 + sm);
+              if (mins <= 0) return null;
+              const h = Math.floor(mins / 60);
+              const m = mins % 60;
+              return (
+                <div className="flex items-center justify-center gap-2 py-1">
+                  <div className="flex-1 h-px bg-border" />
+                  <span className="text-xs text-muted-foreground font-medium whitespace-nowrap">
+                    {h > 0 ? `${h} Std. ` : ''}{m > 0 ? `${m} Min.` : ''}
+                  </span>
+                  <div className="flex-1 h-px bg-border" />
+                </div>
+              );
+            })()}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label>Schichtende <span className="text-muted-foreground font-normal text-xs">(optional)</span></Label>
+                {shiftEnd && (
+                  <button type="button" onClick={() => setShiftEnd('')} className="text-xs text-muted-foreground hover:text-destructive transition-colors">Leeren</button>
+                )}
+              </div>
+              <div className="relative">
+                <LogOut className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-destructive" />
                 <Input
                   type="time"
                   value={shiftEnd}
                   onChange={e => setShiftEnd(e.target.value)}
-                  className="rounded-xl"
+                  className="rounded-xl pl-9"
                 />
               </div>
             </div>
@@ -2064,10 +2193,10 @@ function DashboardContent() {
               />
             </div>
           </div>
-          <DialogFooter className="flex flex-col gap-2">
+          <DialogFooter className="flex flex-col gap-2 shrink-0">
             <Button
               onClick={handleAddShift}
-              disabled={!shiftEmployee || !shiftDate || !shiftStart || !shiftEnd}
+              disabled={!shiftEmployee || !shiftDate || !shiftStart}
               className="rounded-xl w-full"
             >
               <CalendarCheck2 className="w-4 h-4 mr-2" />
