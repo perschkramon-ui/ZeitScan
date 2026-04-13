@@ -297,13 +297,19 @@ function MAAppContent({ id }: { id: string }) {
 
         {/* Today's Schedule Card */}
         {todaySchedule && (
-          <div className="bg-blue-50 border border-blue-100 rounded-3xl p-5 flex items-center gap-4">
+          <div className="bg-blue-50 border border-blue-100 rounded-3xl p-5 flex items-start gap-4">
             <div className="bg-blue-500 text-white shrink-0 p-3 rounded-2xl shadow-inner">
               <CalendarCheck2 className="w-6 h-6" />
             </div>
-            <div>
+            <div className="flex-1 min-w-0">
               <p className="text-blue-900/60 text-xs font-bold uppercase tracking-wider mb-1">Dein Dienst heute</p>
               <p className="text-blue-950 font-bold text-lg">{todaySchedule.shiftStart} — {todaySchedule.shiftEnd} Uhr</p>
+              {todaySchedule.breakStart && (
+                <div className="inline-flex items-center gap-1.5 mt-2 text-xs text-amber-700 bg-amber-100 px-2.5 py-1 rounded-full font-medium">
+                  <Coffee className="w-3 h-3" />
+                  Pause: {todaySchedule.breakStart}{todaySchedule.breakEnd ? `–${todaySchedule.breakEnd}` : ''} Uhr
+                </div>
+              )}
               {todaySchedule.note && <p className="text-sm text-blue-800 mt-1">{todaySchedule.note}</p>}
             </div>
           </div>

@@ -49,6 +49,8 @@ export type ScheduleEntry = {
   date: string; // ISO date string: 'yyyy-MM-dd'
   shiftStart: string; // e.g. '08:00'
   shiftEnd: string;   // e.g. '17:00'
+  breakStart?: string; // e.g. '12:00'
+  breakEnd?: string;   // e.g. '12:30'
   note?: string;
   createdAt: string;
 };

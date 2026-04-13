@@ -350,6 +350,8 @@ function DashboardContent() {
   const [shiftStart, setShiftStart] = useState('08:00');
   const [shiftEnd, setShiftEnd] = useState('');
   const [shiftNote, setShiftNote] = useState('');
+  const [shiftBreakStart, setShiftBreakStart] = useState('');
+  const [shiftBreakEnd, setShiftBreakEnd] = useState('');
 
   // QR Code State
   const [qrCodeEmployee, setQrCodeEmployee] = useState<Employee | null>(null);
@@ -564,7 +566,7 @@ function DashboardContent() {
     return `${h}:${String(m).padStart(2, '0')} h`;
   };
 
-  const buildEmployeeBlock = (emp: Employee, entries: TimeEntry[]) => {
+  const buildEmployeeBlock = (emp: Employee, entries: TimeEntry[], empSchedules?: ScheduleEntry[]) => {
     const sorted = [...entries].sort((a, b) => a.clockInTime.localeCompare(b.clockInTime));
 
     // Group by calendar date of clockInTime
@@ -575,11 +577,17 @@ function DashboardContent() {
       byDate.get(key)!.push(e);
     });
 
-    const HEADER = 'Datum;Wochentag;Kommen;Gehen;Bruttozeit;Pause;Nettoarbeitszeit;Kategorie;Hinweis\n';
+    const HEADER = 'Datum;Wochentag;Kommen;Gehen;Bruttozeit;Tatsächl. Pause;Geplante Pause;Nettoarbeitszeit;Kategorie;Hinweis\n';
     let rows = '';
     let totalNetMins = 0;
     let bookedVacDays = 0;
     let bookedSickDays = 0;
+
+    // Build a map of scheduled breaks by date for this employee
+    const scheduleByDate = new Map();
+    (empSchedules || []).forEach(s => {
+      if (s.breakStart) scheduleByDate.set(s.date, s);
+    });
 
     [...byDate.keys()].sort().forEach(dateKey => {
       const dayEntries = byDate.get(dateKey)!;
@@ -602,7 +610,7 @@ function DashboardContent() {
           : dateStr;
         const numDays = clockOut ? differenceInDays(clockOut, parseISO(e.clockInTime)) + 1 : 1;
         const label = e.entryType === 'VACATION' ? 'Urlaub' : 'Krank';
-        rows += `${dateCellStr};${dayName};-;-;-;-;${numDays} Tag(e);${label};\n`;
+        rows += `${dateCellStr};${dayName};-;-;-;-;-;${numDays} Tag(e);${label};\n`;
         if (e.entryType === 'VACATION') bookedVacDays += numDays;
         else bookedSickDays += numDays;
       });
@@ -626,9 +634,13 @@ function DashboardContent() {
         : differenceInMinutes(new Date(), firstIn);
       const pauseMins = Math.max(0, grossMins - netMins);
 
+      const scheduledBreak = scheduleByDate.get(dateKey);
+      const plannedPauseLabel = scheduledBreak
+        ? (scheduledBreak.breakStart + (scheduledBreak.breakEnd ? '\u2013' + scheduledBreak.breakEnd : ''))
+        : '-';
       const hint = !lastOut ? 'noch aktiv' : (lastEntry.exitType === 'PAUSE' ? 'endet in Pause' : '');
 
-      rows += `${dateStr};${dayName};${format(firstIn, 'HH:mm')};${lastOut ? format(lastOut, 'HH:mm') : 'offen'};${fmtDur(grossMins)};${pauseMins > 0 ? fmtDur(pauseMins) : '-'};${fmtDur(netMins)};Arbeit;${hint}\n`;
+      rows += `${dateStr};${dayName};${format(firstIn, 'HH:mm')};${lastOut ? format(lastOut, 'HH:mm') : 'offen'};${fmtDur(grossMins)};${pauseMins > 0 ? fmtDur(pauseMins) : '-'};${plannedPauseLabel};${fmtDur(netMins)};Arbeit;${hint}\n`;
       totalNetMins += netMins;
     });
 
@@ -660,7 +672,8 @@ function DashboardContent() {
     if (!timeEntries) return;
     try {
       const empEntries = timeEntries.filter(e => e.employeeId === emp.id);
-      const { header, rows, summary } = buildEmployeeBlock(emp, empEntries);
+      const empSchedules = (schedules || []).filter(s => s.employeeId === emp.id);
+      const { header, rows, summary } = buildEmployeeBlock(emp, empEntries, empSchedules);
 
       let csv = `Mitarbeiter: ${emp.fullName}\n`;
       csv += `Position: ${emp.position || 'Mitarbeiter'}\n`;
@@ -726,7 +739,8 @@ function DashboardContent() {
         const empEntries = filteredEntries.filter(e => e.employeeId === emp.id);
         if (empEntries.length === 0) return;
 
-        const { header, rows, summary, totalNetMins, bookedVacDays, bookedSickDays } = buildEmployeeBlock(emp, empEntries);
+        const empSchedules2 = (schedules || []).filter(s => s.employeeId === emp.id);
+        const { header, rows, summary, totalNetMins, bookedVacDays, bookedSickDays } = buildEmployeeBlock(emp, empEntries, empSchedules2);
 
         csv += `=== ${emp.fullName} | ${emp.position || 'Mitarbeiter'} ===\n`;
         csv += header;
@@ -897,14 +911,19 @@ function DashboardContent() {
       date: shiftDate,
       shiftStart,
       shiftEnd: shiftEnd || '',
+      breakStart: shiftBreakStart || '',
+      breakEnd: shiftBreakEnd || '',
       note: shiftNote || '',
       createdAt: new Date().toISOString(),
     });
     const endLabel = shiftEnd ? ` - ${shiftEnd}` : ' (offenes Ende)';
-    toast({ title: 'Schicht eingetragen', description: `${emp.fullName} am ${format(new Date(shiftDate + 'T00:00'), 'dd.MM.yyyy', { locale: de })} von ${shiftStart}${endLabel}` });
+    const breakLabel = shiftBreakStart ? ` | Pause: ${shiftBreakStart}${shiftBreakEnd ? `–${shiftBreakEnd}` : ''}` : '';
+    toast({ title: 'Schicht eingetragen', description: `${emp.fullName} am ${format(new Date(shiftDate + 'T00:00'), 'dd.MM.yyyy', { locale: de })} von ${shiftStart}${endLabel}${breakLabel}` });
     setIsAddShiftOpen(false);
     setShiftNote('');
     setShiftEnd('');
+    setShiftBreakStart('');
+    setShiftBreakEnd('');
   };
 
   const handleDeleteShift = (shift: ScheduleEntry) => {
@@ -1620,14 +1639,20 @@ function DashboardContent() {
                                     isToday(day) ? 'bg-primary/5' : ''
                                   }`}>
                                     {dayShifts.map(shift => (
-                                      <div key={shift.id} className="bg-primary text-primary-foreground rounded-lg px-2 py-1 text-[10px] font-medium flex items-start justify-between gap-1 group/shift">
-                                        <div>
+                                      <div key={shift.id} className="bg-primary text-primary-foreground rounded-lg px-2 py-1.5 text-[10px] font-medium flex items-start justify-between gap-1 group/shift">
+                                        <div className="min-w-0">
                                           <div className="font-bold">{shift.shiftStart}{shift.shiftEnd ? `–${shift.shiftEnd}` : ' →'}</div>
-                                          {shift.note && <div className="opacity-80 truncate max-w-[80px]">{shift.note}</div>}
+                                          {shift.breakStart && (
+                                            <div className="flex items-center gap-0.5 mt-0.5 opacity-80">
+                                              <Coffee className="w-2.5 h-2.5 shrink-0" />
+                                              <span>{shift.breakStart}{shift.breakEnd ? '–' + shift.breakEnd : ''}</span>
+                                            </div>
+                                          )}
+                                          {shift.note && <div className="opacity-70 truncate max-w-[80px] mt-0.5 italic">{shift.note}</div>}
                                         </div>
                                         <button
                                           onClick={() => handleDeleteShift(shift)}
-                                          className="opacity-0 group-hover/shift:opacity-100 transition-opacity text-primary-foreground/70 hover:text-primary-foreground mt-0.5"
+                                          className="opacity-0 group-hover/shift:opacity-100 transition-opacity text-primary-foreground/70 hover:text-primary-foreground mt-0.5 shrink-0"
                                         >
                                           <X className="w-3 h-3" />
                                         </button>
@@ -2111,6 +2136,7 @@ function DashboardContent() {
                   <TableHead>Kommen</TableHead>
                   <TableHead>Gehen</TableHead>
                   <TableHead>Dauer</TableHead>
+                  <TableHead>Geplante Pause</TableHead>
                   <TableHead className="text-right">Aktionen</TableHead>
                 </TableRow>
               </TableHeader>
@@ -2137,6 +2163,12 @@ function DashboardContent() {
                   }
 
                   const isMultiDay = clockOut && !isSameDay(clockIn, clockOut);
+
+                  // Look up planned break from schedule
+                  const entryDateKey = format(clockIn, 'yyyy-MM-dd');
+                  const plannedBreakEntry = entryType === 'WORK'
+                    ? (schedules || []).find(s => s.employeeId === viewingLogsEmployee?.id && s.date === entryDateKey && s.breakStart)
+                    : null;
 
                   return (
                     <TableRow key={entry.id} className={entryType === 'VACATION' ? 'bg-blue-50/30' : entryType === 'SICK' ? 'bg-orange-50/30' : ''}>
@@ -2169,6 +2201,18 @@ function DashboardContent() {
                         ) : '-'}
                       </TableCell>
                       <TableCell className="font-mono">{diff.toFixed(2)}h</TableCell>
+                      <TableCell>
+                        {plannedBreakEntry ? (
+                          <div className="flex items-center gap-1 text-amber-700">
+                            <Coffee className="w-3 h-3 shrink-0" />
+                            <span className="text-xs font-medium">
+                              {plannedBreakEntry.breakStart}{plannedBreakEntry.breakEnd ? '–' + plannedBreakEntry.breakEnd : ''}
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground/40 text-xs">—</span>
+                        )}
+                      </TableCell>
                       <TableCell className="text-right">
                         <div className="flex gap-1 justify-end">
                           <Button variant="ghost" size="icon" className="h-8 w-8 text-primary" onClick={() => {
@@ -2272,6 +2316,61 @@ function DashboardContent() {
                 />
               </div>
             </div>
+
+            {/* Break Time Section */}
+            <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <Coffee className="w-4 h-4 text-amber-600" />
+                <Label className="text-amber-800 font-semibold text-sm">Pausenzeit <span className="font-normal text-amber-600/80">(optional)</span></Label>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">Pause von</Label>
+                  <div className="relative">
+                    <Coffee className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-amber-500" />
+                    <Input
+                      type="time"
+                      value={shiftBreakStart}
+                      onChange={e => setShiftBreakStart(e.target.value)}
+                      className="rounded-xl pl-9 h-10 text-sm"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">Pause bis</Label>
+                  <div className="relative">
+                    <Play className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-green-600" />
+                    <Input
+                      type="time"
+                      value={shiftBreakEnd}
+                      onChange={e => setShiftBreakEnd(e.target.value)}
+                      className="rounded-xl pl-9 h-10 text-sm"
+                    />
+                  </div>
+                </div>
+              </div>
+              {shiftBreakStart && shiftBreakEnd && (() => {
+                const [bsh, bsm] = shiftBreakStart.split(':').map(Number);
+                const [beh, bem] = shiftBreakEnd.split(':').map(Number);
+                const mins = (beh * 60 + bem) - (bsh * 60 + bsm);
+                if (mins <= 0) return null;
+                return (
+                  <p className="text-xs text-amber-700 font-medium text-center">
+                    {mins} Minuten Pause eingeplant
+                  </p>
+                );
+              })()}
+              {(shiftBreakStart || shiftBreakEnd) && (
+                <button
+                  type="button"
+                  onClick={() => { setShiftBreakStart(''); setShiftBreakEnd(''); }}
+                  className="text-xs text-amber-600/70 hover:text-destructive transition-colors w-full text-center"
+                >
+                  Pause entfernen
+                </button>
+              )}
+            </div>
+
             <div className="space-y-2">
               <Label>Notiz (optional)</Label>
               <Input

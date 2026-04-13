@@ -311,11 +311,19 @@ function PortalContent() {
               {/* Dienstplan status pill */}
               {scheduleFeatureActive && selectedId && !schedulesLoading && (
                 selectedEmployeeSchedule ? (
-                  <div className="flex items-center gap-2 text-xs text-green-700 bg-green-50 px-3 py-1.5 rounded-full border border-green-200">
-                    <CalendarCheck2 className="w-3.5 h-3.5" />
-                    <span>
-                      Dienstplan: {selectedEmployeeSchedule.shiftStart}–{selectedEmployeeSchedule.shiftEnd} Uhr
-                    </span>
+                  <div className="flex flex-col items-center gap-1">
+                    <div className="flex items-center gap-2 text-xs text-green-700 bg-green-50 px-3 py-1.5 rounded-full border border-green-200">
+                      <CalendarCheck2 className="w-3.5 h-3.5" />
+                      <span>
+                        Dienstplan: {selectedEmployeeSchedule.shiftStart}–{selectedEmployeeSchedule.shiftEnd} Uhr
+                      </span>
+                    </div>
+                    {selectedEmployeeSchedule.breakStart && (
+                      <div className="flex items-center gap-1.5 text-xs text-amber-700 bg-amber-50 px-3 py-1 rounded-full border border-amber-200">
+                        <Coffee className="w-3 h-3" />
+                        <span>Pause: {selectedEmployeeSchedule.breakStart}{selectedEmployeeSchedule.breakEnd ? `–${selectedEmployeeSchedule.breakEnd}` : ''} Uhr</span>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="flex items-center gap-2 text-xs text-destructive bg-destructive/10 px-3 py-1.5 rounded-full border border-destructive/20">
