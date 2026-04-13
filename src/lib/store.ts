@@ -39,6 +39,8 @@ export type AdminUser = {
   trialStartedAt?: string | null;
   stripeCustomerId?: string;
   createdAt: string;
+  /** If true, missing break times are automatically added per §4 ArbZG */
+  autoBreakDeduction?: boolean;
 };
 
 export type ScheduleEntry = {

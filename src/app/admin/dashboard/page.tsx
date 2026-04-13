@@ -504,24 +504,70 @@ function DashboardContent() {
     return map;
   }, [employees, timeEntries, activeAbsenceMap]);
 
+  /**
+   * §4 ArbZG: returns the mandatory break in minutes for a given net worked time.
+   * >6h = 30 min | >9h = 45 min | else 0
+   * Placed in the first third of the shift (= first half guaranteed).
+   */
+  const getAutoBreakMins = (netMins: number): number => {
+    if (netMins > 9 * 60) return 45;
+    if (netMins > 6 * 60) return 30;
+    return 0;
+  };
+
   const workedHoursMap = useMemo(() => {
     const map = new Map<string, number>();
     if (!timeEntries || !isFeatureActive) return map;
 
     const now = new Date();
     const startOfPeriod = period === 'weekly' ? startOfWeek(now, { weekStartsOn: 1 }) : startOfMonth(now);
+    const autoBreak = adminData?.autoBreakDeduction === true;
+
+    // Group relevant work entries per employee per day
+    const byEmpDay = new Map<string, Map<string, TimeEntry[]>>();
 
     timeEntries.forEach(entry => {
       if (entry.entryType && entry.entryType !== 'WORK') return;
       const clockIn = parseISO(entry.clockInTime);
-      if (isAfter(clockIn, startOfPeriod) || isSameDay(clockIn, startOfPeriod)) {
-        const clockOut = entry.clockOutTime ? parseISO(entry.clockOutTime) : now;
-        const hours = differenceInMinutes(clockOut, clockIn) / 60;
-        map.set(entry.employeeId, (map.get(entry.employeeId) || 0) + hours);
-      }
+      if (!isAfter(clockIn, startOfPeriod) && !isSameDay(clockIn, startOfPeriod)) return;
+      const dateKey = format(clockIn, 'yyyy-MM-dd');
+
+      if (!byEmpDay.has(entry.employeeId)) byEmpDay.set(entry.employeeId, new Map());
+      const dayMap = byEmpDay.get(entry.employeeId)!;
+      if (!dayMap.has(dateKey)) dayMap.set(dateKey, []);
+      dayMap.get(dateKey)!.push(entry);
     });
+
+    byEmpDay.forEach((dayMap, empId) => {
+      let totalMins = 0;
+      dayMap.forEach((entries) => {
+        // Net = sum of individual segment durations
+        let netMins = 0;
+        let firstInTime = Infinity;
+        let lastOutTime = 0;
+        entries.forEach(e => {
+          const inT = parseISO(e.clockInTime).getTime();
+          const outT = e.clockOutTime ? parseISO(e.clockOutTime).getTime() : now.getTime();
+          netMins += (outT - inT) / 60000;
+          firstInTime = Math.min(firstInTime, inT);
+          lastOutTime = Math.max(lastOutTime, outT);
+        });
+        const grossMins = (lastOutTime - firstInTime) / 60000;
+        const actualPauseMins = Math.max(0, grossMins - netMins);
+
+        let effectiveMins = netMins;
+        if (autoBreak) {
+          const requiredPause = getAutoBreakMins(netMins);
+          const deficit = Math.max(0, requiredPause - actualPauseMins);
+          effectiveMins = Math.max(0, netMins - deficit);
+        }
+        totalMins += effectiveMins;
+      });
+      map.set(empId, totalMins / 60);
+    });
+
     return map;
-  }, [timeEntries, period, isFeatureActive]);
+  }, [timeEntries, period, isFeatureActive, adminData]);
 
   const filteredEmployees = useMemo(() => {
     if (!employees) return [];
@@ -543,22 +589,54 @@ function DashboardContent() {
       return logsFilter === 'month' ? (isAfter(date, startOfMonth(now)) || isSameDay(date, startOfMonth(now))) : (isAfter(date, startOfYear(now)) || isSameDay(date, startOfYear(now)));
     });
 
+    const autoBreakLog = adminData?.autoBreakDeduction === true;
+
+    // Group work entries by day to compute net, gross and actual pause
+    const workByDay = new Map<string, { entries: typeof filtered }>();
+    filtered.filter(e => !e.entryType || e.entryType === 'WORK').forEach(e => {
+      const dateKey = format(parseISO(e.clockInTime), 'yyyy-MM-dd');
+      if (!workByDay.has(dateKey)) workByDay.set(dateKey, { entries: [] });
+      workByDay.get(dateKey)!.entries.push(e);
+    });
+
+    let totalWorkHours = 0;
+    workByDay.forEach(({ entries }) => {
+      const now = new Date();
+      let netMins = 0;
+      let firstInTime = Infinity;
+      let lastOutTime = 0;
+      entries.forEach(e => {
+        const inT = parseISO(e.clockInTime).getTime();
+        const outT = e.clockOutTime ? parseISO(e.clockOutTime).getTime() : now.getTime();
+        netMins += (outT - inT) / 60000;
+        firstInTime = Math.min(firstInTime, inT);
+        lastOutTime = Math.max(lastOutTime, outT);
+      });
+      const grossMins = (lastOutTime - firstInTime) / 60000;
+      const actualPauseMins = Math.max(0, grossMins - netMins);
+
+      let effectiveMins = netMins;
+      if (autoBreakLog) {
+        const requiredPause = getAutoBreakMins(netMins);
+        const deficit = Math.max(0, requiredPause - actualPauseMins);
+        effectiveMins = Math.max(0, netMins - deficit);
+      }
+      totalWorkHours += effectiveMins / 60;
+    });
+
     return filtered.reduce((acc, e) => {
-      const start = parseISO(e.clockInTime);
-      const end = e.clockOutTime ? parseISO(e.clockOutTime) : (e.entryType === 'WORK' ? new Date() : start);
-      
-      if (!e.entryType || e.entryType === 'WORK') {
-        acc.work += differenceInMinutes(end, start) / 60;
-      } else if (e.entryType === 'VACATION') {
-        const days = differenceInDays(end, start) + 1;
-        acc.vacation += days;
+      if (e.entryType === 'VACATION') {
+        const start = parseISO(e.clockInTime);
+        const end = e.clockOutTime ? parseISO(e.clockOutTime) : start;
+        acc.vacation += differenceInDays(end, start) + 1;
       } else if (e.entryType === 'SICK') {
-        const days = differenceInDays(end, start) + 1;
-        acc.sick += days;
+        const start = parseISO(e.clockInTime);
+        const end = e.clockOutTime ? parseISO(e.clockOutTime) : start;
+        acc.sick += differenceInDays(end, start) + 1;
       }
       return acc;
-    }, { work: 0, vacation: 0, sick: 0 });
-  }, [viewingLogsEmployee, timeEntries, logsFilter]);
+    }, { work: totalWorkHours, vacation: 0, sick: 0 });
+  }, [viewingLogsEmployee, timeEntries, logsFilter, adminData]);
 
   const fmtDur = (mins: number) => {
     const h = Math.floor(Math.abs(mins) / 60);
@@ -566,7 +644,7 @@ function DashboardContent() {
     return `${h}:${String(m).padStart(2, '0')} h`;
   };
 
-  const buildEmployeeBlock = (emp: Employee, entries: TimeEntry[], empSchedules?: ScheduleEntry[]) => {
+  const buildEmployeeBlock = (emp: Employee, entries: TimeEntry[], empSchedules?: ScheduleEntry[], autoBreakDeduction?: boolean) => {
     const sorted = [...entries].sort((a, b) => a.clockInTime.localeCompare(b.clockInTime));
 
     // Group by calendar date of clockInTime
@@ -632,7 +710,23 @@ function DashboardContent() {
       const grossMins = lastOut
         ? differenceInMinutes(lastOut, firstIn)
         : differenceInMinutes(new Date(), firstIn);
-      const pauseMins = Math.max(0, grossMins - netMins);
+      const actualPauseMins = Math.max(0, grossMins - netMins);
+
+      // §4 ArbZG: top-up pause to legal minimum if too little was taken
+      const requiredPause = (autoBreakDeduction && lastOut) ? getAutoBreakMins(netMins) : 0;
+      const pauseDeficit = Math.max(0, requiredPause - actualPauseMins);
+      const pauseMins = actualPauseMins + pauseDeficit;
+      const effectiveNetMins = lastOut ? Math.max(0, netMins - pauseDeficit) : netMins;
+
+      // Auto-break label: show where the deficit pause is placed (first third of shift)
+      const autoBreakLabel = pauseDeficit > 0
+        ? (() => {
+            const breakStartMin = Math.round(grossMins * 0.33);
+            const bs = new Date(firstIn.getTime() + breakStartMin * 60000);
+            const be = new Date(bs.getTime() + pauseDeficit * 60000);
+            return format(bs, 'HH:mm') + '–' + format(be, 'HH:mm') + ' (+' + pauseDeficit + 'min §4 ArbZG)';
+          })()
+        : null;
 
       const scheduledBreak = scheduleByDate.get(dateKey);
       const plannedPauseLabel = scheduledBreak
@@ -640,8 +734,14 @@ function DashboardContent() {
         : '-';
       const hint = !lastOut ? 'noch aktiv' : (lastEntry.exitType === 'PAUSE' ? 'endet in Pause' : '');
 
-      rows += `${dateStr};${dayName};${format(firstIn, 'HH:mm')};${lastOut ? format(lastOut, 'HH:mm') : 'offen'};${fmtDur(grossMins)};${pauseMins > 0 ? fmtDur(pauseMins) : '-'};${plannedPauseLabel};${fmtDur(netMins)};Arbeit;${hint}\n`;
-      totalNetMins += netMins;
+      const netLabel = pauseDeficit > 0 ? fmtDur(effectiveNetMins) : fmtDur(netMins);
+      const pauseLabel = pauseMins > 0 ? fmtDur(pauseMins) + (pauseDeficit > 0 ? ' (+' + pauseDeficit + 'min auto)' : '') : '-';
+      const breakHintLabel = autoBreakLabel || plannedPauseLabel;
+      const rowHint = pauseDeficit > 0 && autoBreakLabel
+        ? (hint ? hint + ' | ' : '') + 'Pause auto: ' + autoBreakLabel
+        : hint;
+      rows += `${dateStr};${dayName};${format(firstIn, 'HH:mm')};${lastOut ? format(lastOut, 'HH:mm') : 'offen'};${fmtDur(grossMins)};${pauseLabel};${breakHintLabel};${netLabel};Arbeit;${rowHint}\n`;
+      totalNetMins += pauseDeficit > 0 ? effectiveNetMins : netMins;
     });
 
     const totalH = Math.floor(totalNetMins / 60);
@@ -673,7 +773,7 @@ function DashboardContent() {
     try {
       const empEntries = timeEntries.filter(e => e.employeeId === emp.id);
       const empSchedules = (schedules || []).filter(s => s.employeeId === emp.id);
-      const { header, rows, summary } = buildEmployeeBlock(emp, empEntries, empSchedules);
+      const { header, rows, summary } = buildEmployeeBlock(emp, empEntries, empSchedules, adminData?.autoBreakDeduction === true);
 
       let csv = `Mitarbeiter: ${emp.fullName}\n`;
       csv += `Position: ${emp.position || 'Mitarbeiter'}\n`;
@@ -740,7 +840,7 @@ function DashboardContent() {
         if (empEntries.length === 0) return;
 
         const empSchedules2 = (schedules || []).filter(s => s.employeeId === emp.id);
-        const { header, rows, summary, totalNetMins, bookedVacDays, bookedSickDays } = buildEmployeeBlock(emp, empEntries, empSchedules2);
+        const { header, rows, summary, totalNetMins, bookedVacDays, bookedSickDays } = buildEmployeeBlock(emp, empEntries, empSchedules2, adminData?.autoBreakDeduction === true);
 
         csv += `=== ${emp.fullName} | ${emp.position || 'Mitarbeiter'} ===\n`;
         csv += header;
