@@ -43,3 +43,10 @@ next-env.d.ts
 # firebase
 firebase-debug.log
 firestore-debug.log
+
+# sensitive keys - NEVER commit these!
+service-account-key.json
+service-account-key.json.txt
+**/service-account*.json
+**/serviceAccountKey*.json
+*-firebase-adminsdk-*.json
