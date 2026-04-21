@@ -14,6 +14,8 @@ export type Employee = {
   vacationDays?: number;
   sickDays?: number;
   isArchived?: boolean;
+  /** Obstgärtla special: Pause wird zur Arbeitszeit hinzugezählt, nicht abgezogen */
+  pauseAddMode?: boolean;
   createdAt: string;
 };
 

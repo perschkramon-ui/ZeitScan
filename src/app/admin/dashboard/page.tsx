@@ -115,7 +115,9 @@ import {
   Share2,
   Copy,
   MessageCircle,
-  QrCode
+  QrCode,
+  CalendarClock,
+  UtensilsCrossed
 } from 'lucide-react';
 import { 
   startOfWeek, 
@@ -161,6 +163,9 @@ const MONTHS_LIST = [
 
 const CURRENT_YEAR = new Date().getFullYear();
 const YEARS_LIST = Array.from({ length: 20 }, (_, i) => String(CURRENT_YEAR - i));
+
+/** Nur dieser Nutzer sieht den +Pause/-Pause Modus */
+const OBSTGAERTLA_EMAIL = 'rechnung.obstgaertla@gmail.com';
 
 function AuthGate({ children }: { children: React.ReactNode }) {
   const { user, isUserLoading, userError } = useUser();
@@ -287,7 +292,16 @@ function DashboardContent() {
   const [newEmployeePeriod, setNewEmployeePeriod] = useState<'weekly' | 'monthly'>('weekly');
   const [newEmployeeVacation, setNewEmployeeVacation] = useState('');
   const [newEmployeeSickDays, setNewEmployeeSickDays] = useState('');
+  const [newEmployeePauseAddMode, setNewEmployeePauseAddMode] = useState(false);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+
+  // Manual Work Entry Dialog State
+  const [isManualWorkEntryOpen, setIsManualWorkEntryOpen] = useState(false);
+  const [manualWorkEmployee, setManualWorkEmployee] = useState<Employee | null>(null);
+  const [manualWorkDate, setManualWorkDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [manualWorkStart, setManualWorkStart] = useState('08:00');
+  const [manualWorkEnd, setManualWorkEnd] = useState('17:00');
+  const [manualWorkBreak, setManualWorkBreak] = useState('30');
 
   // Edit Employee State
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
@@ -297,6 +311,7 @@ function DashboardContent() {
   const [editPeriod, setEditPeriod] = useState<'weekly' | 'monthly'>('weekly');
   const [editVacation, setEditVacation] = useState('');
   const [editSickDays, setEditSickDays] = useState('');
+  const [editPauseAddMode, setEditPauseAddMode] = useState(false);
 
   // Range-based Absence Booking State (inside Edit Dialog)
   const [absenceType, setAbsenceType] = useState<'VACATION' | 'SICK'>('VACATION');
@@ -523,6 +538,11 @@ function DashboardContent() {
     const startOfPeriod = period === 'weekly' ? startOfWeek(now, { weekStartsOn: 1 }) : startOfMonth(now);
     const autoBreak = adminData?.autoBreakDeduction === true;
 
+    // Build pauseAddMode lookup
+    const pauseAddModeSet = new Set<string>(
+      (employees || []).filter(e => e.pauseAddMode).map(e => e.id)
+    );
+
     // Group relevant work entries per employee per day
     const byEmpDay = new Map<string, Map<string, TimeEntry[]>>();
 
@@ -540,8 +560,8 @@ function DashboardContent() {
 
     byEmpDay.forEach((dayMap, empId) => {
       let totalMins = 0;
+      const isPauseAdd = pauseAddModeSet.has(empId);
       dayMap.forEach((entries) => {
-        // Net = sum of individual segment durations
         let netMins = 0;
         let firstInTime = Infinity;
         let lastOutTime = 0;
@@ -555,11 +575,16 @@ function DashboardContent() {
         const grossMins = (lastOutTime - firstInTime) / 60000;
         const actualPauseMins = Math.max(0, grossMins - netMins);
 
-        let effectiveMins = netMins;
-        if (autoBreak) {
+        let effectiveMins: number;
+        if (isPauseAdd) {
+          // Obstgärtla mode: Pause zählt als Arbeitszeit → Brutto verwenden
+          effectiveMins = grossMins;
+        } else if (autoBreak) {
           const requiredPause = getAutoBreakMins(netMins);
           const deficit = Math.max(0, requiredPause - actualPauseMins);
           effectiveMins = Math.max(0, netMins - deficit);
+        } else {
+          effectiveMins = netMins;
         }
         totalMins += effectiveMins;
       });
@@ -567,7 +592,7 @@ function DashboardContent() {
     });
 
     return map;
-  }, [timeEntries, period, isFeatureActive, adminData]);
+  }, [timeEntries, period, isFeatureActive, adminData, employees]);
 
   const filteredEmployees = useMemo(() => {
     if (!employees) return [];
@@ -881,13 +906,59 @@ function DashboardContent() {
       vacationDays: Number(newEmployeeVacation) || 0,
       sickDays: Number(newEmployeeSickDays) || 0,
       isArchived: false,
+      pauseAddMode: newEmployeePauseAddMode,
       externalEmployeeId: `EMP-${Math.floor(Math.random() * 10000)}`,
       createdAt: new Date().toISOString(),
     });
     toast({ title: "Mitarbeiter hinzugefügt", description: `${newEmployeeName} wurde angelegt.` });
     setNewEmployeeName(''); setNewEmployeePosition(''); setNewEmployeeHours('');
-    setNewEmployeeVacation(''); setNewEmployeeSickDays('');
+    setNewEmployeeVacation(''); setNewEmployeeSickDays(''); setNewEmployeePauseAddMode(false);
     setIsAddDialogOpen(false);
+  };
+
+  const handleAddManualWorkEntry = () => {
+    if (!manualWorkEmployee || !firestore || !user || !manualWorkDate || !manualWorkStart || !manualWorkEnd) {
+      toast({ title: "Fehler", description: "Bitte alle Felder ausfüllen.", variant: "destructive" });
+      return;
+    }
+    const clockIn = new Date(`${manualWorkDate}T${manualWorkStart}:00`);
+    const clockOut = new Date(`${manualWorkDate}T${manualWorkEnd}:00`);
+    if (clockOut <= clockIn) {
+      toast({ title: "Fehler", description: "Ende muss nach dem Start liegen.", variant: "destructive" });
+      return;
+    }
+    const breakMins = parseInt(manualWorkBreak) || 0;
+    if (breakMins > 0) {
+      const totalMins = (clockOut.getTime() - clockIn.getTime()) / 60000;
+      const seg1End = new Date(clockIn.getTime() + Math.floor((totalMins - breakMins) / 2) * 60000);
+      const seg2Start = new Date(seg1End.getTime() + breakMins * 60000);
+      addDocumentNonBlocking(collection(firestore, 'timeEntries'), {
+        adminId: activeAdminUid, employeeId: manualWorkEmployee.id, employeeName: manualWorkEmployee.fullName,
+        clockInTime: clockIn.toISOString(), clockOutTime: seg1End.toISOString(),
+        entryType: 'WORK', exitType: 'PAUSE', sourceSystem: 'Admin-Dashboard (Nachtrag)',
+        createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+      });
+      addDocumentNonBlocking(collection(firestore, 'timeEntries'), {
+        adminId: activeAdminUid, employeeId: manualWorkEmployee.id, employeeName: manualWorkEmployee.fullName,
+        clockInTime: seg2Start.toISOString(), clockOutTime: clockOut.toISOString(),
+        entryType: 'WORK', exitType: 'END', sourceSystem: 'Admin-Dashboard (Nachtrag)',
+        createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+      });
+    } else {
+      addDocumentNonBlocking(collection(firestore, 'timeEntries'), {
+        adminId: activeAdminUid, employeeId: manualWorkEmployee.id, employeeName: manualWorkEmployee.fullName,
+        clockInTime: clockIn.toISOString(), clockOutTime: clockOut.toISOString(),
+        entryType: 'WORK', exitType: 'END', sourceSystem: 'Admin-Dashboard (Nachtrag)',
+        createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+      });
+    }
+    const netMins = (clockOut.getTime() - clockIn.getTime()) / 60000 - breakMins;
+    const h = Math.floor(netMins / 60); const m = Math.round(netMins % 60);
+    toast({ title: "Arbeitszeit eingetragen", description: `${manualWorkEmployee.fullName} – ${format(clockIn, 'dd.MM.yyyy')} ${manualWorkStart}–${manualWorkEnd} (${h}h ${m}min netto)` });
+    setIsManualWorkEntryOpen(false);
+    setManualWorkDate(format(new Date(), 'yyyy-MM-dd'));
+    setManualWorkStart('08:00'); setManualWorkEnd('17:00'); setManualWorkBreak('30');
+    setManualWorkEmployee(null);
   };
 
   const handleUpdateEmployee = () => {
@@ -898,7 +969,8 @@ function DashboardContent() {
       agreedHours: Number(editHours),
       agreedHoursPeriod: editPeriod,
       vacationDays: Number(editVacation),
-      sickDays: Number(editSickDays)
+      sickDays: Number(editSickDays),
+      pauseAddMode: editPauseAddMode,
     });
     toast({ title: "Aktualisiert", description: "Daten wurden gespeichert." });
     setEditingEmployee(null);
@@ -1305,6 +1377,23 @@ function DashboardContent() {
                         <div className="space-y-2"><Label>Urlaubstage (Jahr)</Label><Input type="number" placeholder="30" value={newEmployeeVacation} onChange={(e) => setNewEmployeeVacation(e.target.value)} /></div>
                         <div className="space-y-2"><Label>Krankheitstage</Label><Input type="number" placeholder="0" value={newEmployeeSickDays} onChange={(e) => setNewEmployeeSickDays(e.target.value)} /></div>
                       </div>
+                      {/* +Pause/-Pause Toggle — nur für Obstgärtla */}
+                      {(adminData?.email === OBSTGAERTLA_EMAIL || (impersonateAdmin && allAdmins?.find(a => a.id === impersonateAdmin.uid)?.email === OBSTGAERTLA_EMAIL)) && (
+                        <div className="flex items-center justify-between p-3 bg-amber-50 border border-amber-200 rounded-xl">
+                          <div className="flex items-center gap-2">
+                            <UtensilsCrossed className="w-4 h-4 text-amber-600" />
+                            <div>
+                              <p className="text-sm font-bold text-amber-800">+Pause Modus</p>
+                              <p className="text-xs text-amber-700">Pausenzeit wird zur Arbeitszeit hinzugerechnet</p>
+                            </div>
+                          </div>
+                          <Switch
+                            checked={newEmployeePauseAddMode}
+                            onCheckedChange={setNewEmployeePauseAddMode}
+                            id="new-pause-add-mode"
+                          />
+                        </div>
+                      )}
                     </div>
                     <DialogFooter><Button onClick={handleAddEmployee} className="rounded-xl w-full">Mitarbeiter Speichern</Button></DialogFooter>
                   </DialogContent>
@@ -1610,6 +1699,27 @@ function DashboardContent() {
 
                                   <Tooltip>
                                     <TooltipTrigger asChild>
+                                      <Button
+                                        variant="ghost" size="icon"
+                                        className="h-8 w-8 text-violet-600"
+                                        title="Arbeitszeit nachtragen"
+                                        onClick={() => {
+                                          setManualWorkEmployee(emp);
+                                          setManualWorkDate(format(new Date(), 'yyyy-MM-dd'));
+                                          setManualWorkStart('08:00');
+                                          setManualWorkEnd('17:00');
+                                          setManualWorkBreak('30');
+                                          setIsManualWorkEntryOpen(true);
+                                        }}
+                                      >
+                                        <CalendarClock className="w-4 h-4" />
+                                      </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>Arbeitszeit nachtragen</TooltipContent>
+                                  </Tooltip>
+
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
                                       <Button variant="ghost" size="icon" className="h-8 w-8 text-primary" onClick={() => {
                                         setEditingEmployee(emp);
                                         setEditName(emp.fullName);
@@ -1618,6 +1728,7 @@ function DashboardContent() {
                                         setEditPeriod(emp.agreedHoursPeriod || 'weekly');
                                         setEditVacation(String(emp.vacationDays || 0));
                                         setEditSickDays(String(emp.sickDays || 0));
+                                        setEditPauseAddMode(emp.pauseAddMode || false);
                                       }}>
                                         <Pencil className="w-4 h-4" />
                                       </Button>
@@ -2028,6 +2139,26 @@ function DashboardContent() {
 
             <Separator />
 
+            {/* +Pause/-Pause Toggle — nur für Obstgärtla */}
+            {(adminData?.email === OBSTGAERTLA_EMAIL || (impersonateAdmin && allAdmins?.find(a => a.id === impersonateAdmin.uid)?.email === OBSTGAERTLA_EMAIL)) && (
+              <div className="flex items-center justify-between p-3 bg-amber-50 border border-amber-200 rounded-xl">
+                <div className="flex items-center gap-2">
+                  <UtensilsCrossed className="w-4 h-4 text-amber-600" />
+                  <div>
+                    <p className="text-sm font-bold text-amber-800">+Pause Modus</p>
+                    <p className="text-xs text-amber-700">Pausenzeit wird zur Arbeitszeit hinzugerechnet</p>
+                  </div>
+                </div>
+                <Switch
+                  checked={editPauseAddMode}
+                  onCheckedChange={setEditPauseAddMode}
+                  id="edit-pause-add-mode"
+                />
+              </div>
+            )}
+
+            <Separator />
+
             <div className="space-y-4 bg-primary/5 p-4 rounded-2xl border border-primary/10">
               <h4 className="text-sm font-bold flex items-center gap-2 text-primary">
                 <CalendarPlus className="w-4 h-4" /> Zeitraum-Abwesenheit buchen
@@ -2169,6 +2300,76 @@ function DashboardContent() {
             </div>
           </div>
           <DialogFooter><Button onClick={handleAdjustOvertime} className="rounded-xl w-full">Buchen</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Manual Work Entry Dialog */}
+      <Dialog open={isManualWorkEntryOpen} onOpenChange={(o) => { if (!o) { setIsManualWorkEntryOpen(false); setManualWorkEmployee(null); } }}>
+        <DialogContent className="rounded-2xl max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CalendarClock className="w-5 h-5 text-violet-600" />
+              Arbeitszeit nachtragen
+            </DialogTitle>
+            <DialogDescription>
+              {manualWorkEmployee?.fullName} — vergangene Arbeitszeit manuell eintragen.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Datum</Label>
+              <Input
+                type="date"
+                value={manualWorkDate}
+                max={format(new Date(), 'yyyy-MM-dd')}
+                onChange={(e) => setManualWorkDate(e.target.value)}
+                className="rounded-xl h-11"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Beginn</Label>
+                <Input type="time" value={manualWorkStart} onChange={(e) => setManualWorkStart(e.target.value)} className="rounded-xl h-11" />
+              </div>
+              <div className="space-y-2">
+                <Label>Ende</Label>
+                <Input type="time" value={manualWorkEnd} onChange={(e) => setManualWorkEnd(e.target.value)} className="rounded-xl h-11" />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Pause (Minuten)</Label>
+              <Input type="number" min="0" max="120" value={manualWorkBreak} onChange={(e) => setManualWorkBreak(e.target.value)} placeholder="30" className="rounded-xl h-11" />
+            </div>
+            {/* Live-Vorschau */}
+            {(() => {
+              try {
+                const tin = new Date(`${manualWorkDate}T${manualWorkStart}:00`);
+                const tout = new Date(`${manualWorkDate}T${manualWorkEnd}:00`);
+                if (tout <= tin) return null;
+                const brk = parseInt(manualWorkBreak) || 0;
+                const net = Math.max(0, (tout.getTime() - tin.getTime()) / 60000 - brk);
+                const h = Math.floor(net / 60); const m = Math.round(net % 60);
+                return (
+                  <div className="bg-violet-50 border border-violet-100 rounded-xl p-3 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Clock className="w-4 h-4 text-violet-600" />
+                      <div>
+                        <p className="text-[10px] text-muted-foreground uppercase font-semibold">Nettoarbeitszeit</p>
+                        <p className="font-black text-slate-800">{h}h {String(m).padStart(2,'0')}min</p>
+                      </div>
+                    </div>
+                    {brk > 0 && <div className="text-right"><p className="text-xs text-muted-foreground">Pause</p><p className="text-sm font-bold text-amber-600">{brk} min</p></div>}
+                  </div>
+                );
+              } catch { return null; }
+            })()}
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="ghost" onClick={() => { setIsManualWorkEntryOpen(false); setManualWorkEmployee(null); }} className="rounded-xl">Abbrechen</Button>
+            <Button onClick={handleAddManualWorkEntry} className="rounded-xl gap-2">
+              <Plus className="w-4 h-4" /> Eintragen
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
