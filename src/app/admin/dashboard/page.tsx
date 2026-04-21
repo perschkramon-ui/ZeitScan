@@ -312,6 +312,10 @@ function DashboardContent() {
   const [editVacation, setEditVacation] = useState('');
   const [editSickDays, setEditSickDays] = useState('');
   const [editPauseAddMode, setEditPauseAddMode] = useState(false);
+  // Retroactive break credit for Obstgärtla
+  const [retroFrom, setRetroFrom] = useState(format(startOfMonth(new Date()), 'yyyy-MM-dd'));
+  const [retroTo, setRetroTo] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [retroPreviewHours, setRetroPreviewHours] = useState<number | null>(null);
 
   // Range-based Absence Booking State (inside Edit Dialog)
   const [absenceType, setAbsenceType] = useState<'VACATION' | 'SICK'>('VACATION');
@@ -974,6 +978,103 @@ function DashboardContent() {
     });
     toast({ title: "Aktualisiert", description: "Daten wurden gespeichert." });
     setEditingEmployee(null);
+  };
+
+  /**
+   * Obstgärtla-exclusive: Scans all time entries for the employee in the selected
+   * date range, computes the total pause gap (gross – net per day), and credits that
+   * amount to the employee’s overtimeBalance.
+   */
+  const handleRetroactiveBreakCredit = () => {
+    if (!editingEmployee || !firestore || !retroFrom || !retroTo) return;
+    const from = parseISO(retroFrom);
+    const to   = new Date(`${retroTo}T23:59:59`);
+
+    // Filter entries for this employee within range
+    const relevant = (timeEntries || []).filter(e => {
+      if (e.entryType && e.entryType !== 'WORK') return false;
+      if (e.employeeId !== editingEmployee.id) return false;
+      const d = parseISO(e.clockInTime);
+      return d >= from && d <= to;
+    });
+
+    if (relevant.length === 0) {
+      toast({ title: "Keine Einträge", description: "Im gewählten Zeitraum wurden keine Buchungen gefunden.", variant: "destructive" });
+      return;
+    }
+
+    // Group by calendar day
+    const byDay = new Map<string, TimeEntry[]>();
+    relevant.forEach(e => {
+      const key = format(parseISO(e.clockInTime), 'yyyy-MM-dd');
+      if (!byDay.has(key)) byDay.set(key, []);
+      byDay.get(key)!.push(e);
+    });
+
+    // For each day: gross span − net sum = actual pause gap
+    let totalPauseMins = 0;
+    byDay.forEach(entries => {
+      let netMins = 0;
+      let firstIn  = Infinity;
+      let lastOut  = 0;
+      entries.forEach(e => {
+        const inT  = parseISO(e.clockInTime).getTime();
+        const outT = e.clockOutTime ? parseISO(e.clockOutTime).getTime() : Date.now();
+        netMins += (outT - inT) / 60000;
+        firstIn  = Math.min(firstIn, inT);
+        lastOut  = Math.max(lastOut, outT);
+      });
+      const grossMins = (lastOut - firstIn) / 60000;
+      totalPauseMins += Math.max(0, grossMins - netMins);
+    });
+
+    if (totalPauseMins < 1) {
+      toast({ title: "Keine Pausenzeit", description: "Im Zeitraum wurden keine Pausen gefunden – nichts zu gutschreiben." });
+      return;
+    }
+
+    const creditHours = totalPauseMins / 60;
+    const newBalance  = (editingEmployee.overtimeBalance || 0) + creditHours;
+    updateDocumentNonBlocking(doc(firestore, 'employees', editingEmployee.id), {
+      overtimeBalance: newBalance,
+    });
+    const h = Math.floor(creditHours); const m = Math.round((creditHours - h) * 60);
+    toast({
+      title: "✅ Pausenguthaben rückwirkend gutgeschrieben",
+      description: `${h}h ${m}min (${byDay.size} Tage) wurden dem Zeitkonto von ${editingEmployee.fullName} hinzugefügt.`,
+    });
+    setRetroPreviewHours(null);
+  };
+
+  /** Preview only – zeigt wie viel es wäre ohne zu buchen */
+  const handlePreviewRetroCredit = () => {
+    if (!editingEmployee || !retroFrom || !retroTo) return;
+    const from = parseISO(retroFrom);
+    const to   = new Date(`${retroTo}T23:59:59`);
+    const relevant = (timeEntries || []).filter(e => {
+      if (e.entryType && e.entryType !== 'WORK') return false;
+      if (e.employeeId !== editingEmployee.id) return false;
+      const d = parseISO(e.clockInTime);
+      return d >= from && d <= to;
+    });
+    const byDay = new Map<string, TimeEntry[]>();
+    relevant.forEach(e => {
+      const key = format(parseISO(e.clockInTime), 'yyyy-MM-dd');
+      if (!byDay.has(key)) byDay.set(key, []);
+      byDay.get(key)!.push(e);
+    });
+    let totalPauseMins = 0;
+    byDay.forEach(entries => {
+      let netMins = 0; let firstIn = Infinity; let lastOut = 0;
+      entries.forEach(e => {
+        const inT = parseISO(e.clockInTime).getTime();
+        const outT = e.clockOutTime ? parseISO(e.clockOutTime).getTime() : Date.now();
+        netMins += (outT - inT) / 60000;
+        firstIn = Math.min(firstIn, inT); lastOut = Math.max(lastOut, outT);
+      });
+      totalPauseMins += Math.max(0, (lastOut - firstIn) / 60000 - netMins);
+    });
+    setRetroPreviewHours(totalPauseMins / 60);
   };
 
   const handleBookRangeAbsence = () => {
@@ -2141,23 +2242,109 @@ function DashboardContent() {
 
             {/* +Pause/-Pause Toggle — nur für Obstgärtla */}
             {(adminData?.email === OBSTGAERTLA_EMAIL || (impersonateAdmin && allAdmins?.find(a => a.id === impersonateAdmin.uid)?.email === OBSTGAERTLA_EMAIL)) && (
-              <div className="flex items-center justify-between p-3 bg-amber-50 border border-amber-200 rounded-xl">
-                <div className="flex items-center gap-2">
-                  <UtensilsCrossed className="w-4 h-4 text-amber-600" />
-                  <div>
-                    <p className="text-sm font-bold text-amber-800">+Pause Modus</p>
-                    <p className="text-xs text-amber-700">Pausenzeit wird zur Arbeitszeit hinzugerechnet</p>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between p-3 bg-amber-50 border border-amber-200 rounded-xl">
+                  <div className="flex items-center gap-2">
+                    <UtensilsCrossed className="w-4 h-4 text-amber-600" />
+                    <div>
+                      <p className="text-sm font-bold text-amber-800">+Pause Modus</p>
+                      <p className="text-xs text-amber-700">Pausenzeit wird zur Arbeitszeit hinzugerechnet</p>
+                    </div>
                   </div>
+                  <Switch
+                    checked={editPauseAddMode}
+                    onCheckedChange={(v) => { setEditPauseAddMode(v); setRetroPreviewHours(null); }}
+                    id="edit-pause-add-mode"
+                  />
                 </div>
-                <Switch
-                  checked={editPauseAddMode}
-                  onCheckedChange={setEditPauseAddMode}
-                  id="edit-pause-add-mode"
-                />
+
+                {/* Rückwirkende Gutschrift — nur wenn +Pause aktiv */}
+                {editPauseAddMode && (
+                  <div className="p-4 bg-amber-50 border border-amber-300 rounded-xl space-y-3">
+                    <div className="flex items-center gap-2">
+                      <History className="w-4 h-4 text-amber-700" />
+                      <p className="text-sm font-bold text-amber-800">Rückwirkende Pausengutschrift</p>
+                    </div>
+                    <p className="text-xs text-amber-700">
+                      Berechnet die gesamte Pausenzeit des Mitarbeiters im gewählten Zeitraum und schreibt sie dem Zeitkonto gut.
+                    </p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <Label className="text-[10px] text-amber-800">Von</Label>
+                        <Input
+                          type="date"
+                          className="h-9 text-xs bg-white"
+                          value={retroFrom}
+                          onChange={(e) => { setRetroFrom(e.target.value); setRetroPreviewHours(null); }}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-[10px] text-amber-800">Bis</Label>
+                        <Input
+                          type="date"
+                          className="h-9 text-xs bg-white"
+                          value={retroTo}
+                          max={format(new Date(), 'yyyy-MM-dd')}
+                          onChange={(e) => { setRetroTo(e.target.value); setRetroPreviewHours(null); }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Schnellwahl */}
+                    <div className="flex gap-1 flex-wrap">
+                      {[
+                        { label: 'Akt. Monat', from: format(startOfMonth(new Date()), 'yyyy-MM-dd'), to: format(new Date(), 'yyyy-MM-dd') },
+                        { label: 'Letz. Monat', from: format(startOfMonth(subDays(startOfMonth(new Date()), 1)), 'yyyy-MM-dd'), to: format(subDays(startOfMonth(new Date()), 1), 'yyyy-MM-dd') },
+                        { label: 'Akt. Jahr', from: format(new Date(new Date().getFullYear(), 0, 1), 'yyyy-MM-dd'), to: format(new Date(), 'yyyy-MM-dd') },
+                      ].map(q => (
+                        <button
+                          key={q.label}
+                          onClick={() => { setRetroFrom(q.from); setRetroTo(q.to); setRetroPreviewHours(null); }}
+                          className="px-2 py-1 text-[10px] bg-amber-100 hover:bg-amber-200 text-amber-800 rounded-lg border border-amber-300 transition-colors"
+                        >
+                          {q.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Preview Result */}
+                    {retroPreviewHours !== null && (
+                      <div className="bg-white border border-amber-300 rounded-lg p-3 flex items-center justify-between">
+                        <div>
+                          <p className="text-[10px] text-muted-foreground uppercase font-semibold">Pausenguthaben im Zeitraum</p>
+                          <p className="font-black text-amber-800 text-lg">
+                            {Math.floor(retroPreviewHours)}h {Math.round((retroPreviewHours - Math.floor(retroPreviewHours)) * 60)}min
+                          </p>
+                        </div>
+                        <Sparkles className="w-5 h-5 text-amber-500" />
+                      </div>
+                    )}
+
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex-1 text-xs border-amber-300 text-amber-800 hover:bg-amber-100"
+                        onClick={handlePreviewRetroCredit}
+                      >
+                        Vorschau berechnen
+                      </Button>
+                      <Button
+                        size="sm"
+                        className="flex-1 text-xs bg-amber-600 hover:bg-amber-700 text-white"
+                        onClick={handleRetroactiveBreakCredit}
+                        disabled={retroPreviewHours === null || retroPreviewHours === 0}
+                      >
+                        <Sparkles className="w-3 h-3 mr-1" /> Gutschreiben
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
             <Separator />
+
 
             <div className="space-y-4 bg-primary/5 p-4 rounded-2xl border border-primary/10">
               <h4 className="text-sm font-bold flex items-center gap-2 text-primary">
