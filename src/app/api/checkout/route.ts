@@ -46,10 +46,7 @@ export async function POST(request: Request) {
       },
     };
 
-    // E-Mail nur hinzufügen, wenn sie vorhanden ist
-    if (email && email.trim() !== '') {
-      sessionOptions.customer_email = email;
-    }
+    // Keine E-Mail vorausfüllen, damit keine gespeicherten Zahlungsdaten übertragen werden
 
     const session = await stripe.checkout.sessions.create(sessionOptions);
 
