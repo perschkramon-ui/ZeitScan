@@ -1569,8 +1569,16 @@ function DashboardContent() {
                     <h3 className="text-lg font-bold text-amber-700 flex items-center gap-2 justify-center md:justify-start">
                       <AlertTriangle className="w-5 h-5" /> Nur noch {trialDaysLeft} Tage Trial übrig
                     </h3>
-                    <p className="text-sm text-muted-foreground">Nach Ablauf der Testphase werden Premium-Funktionen deaktiviert. Kontaktieren Sie uns für ein Abonnement.</p>
+                    <p className="text-sm text-muted-foreground">Nach Ablauf der Testphase werden Premium-Funktionen deaktiviert. Abonnieren Sie jetzt, um den Übergang nahtlos zu gestalten.</p>
                   </div>
+                  <Button 
+                    onClick={handleSubscribe} 
+                    disabled={isCheckoutLoading}
+                    className="bg-green-600 hover:bg-green-700 text-white rounded-xl shadow-lg shrink-0 gap-2"
+                  >
+                    {isCheckoutLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CreditCard className="w-4 h-4" />}
+                    Jetzt abonnieren
+                  </Button>
                 </CardContent>
               </Card>
             )}
@@ -1581,7 +1589,7 @@ function DashboardContent() {
                     <h3 className="text-lg font-bold text-destructive flex items-center gap-2 justify-center md:justify-start">
                       <AlertTriangle className="w-5 h-5" /> Testphase abgelaufen
                     </h3>
-                    <p className="text-sm text-muted-foreground">Ihr 30-Tage-Test ist beendet. Premium-Funktionen sind deaktiviert. Starten Sie Ihr Abo, um fortzufahren.</p>
+                    <p className="text-sm text-muted-foreground">Ihre Testphase ist beendet. Premium-Funktionen sind deaktiviert. Starten Sie Ihr Abo, um fortzufahren.</p>
                   </div>
                   <Button 
                     onClick={handleSubscribe} 
@@ -1604,7 +1612,7 @@ function DashboardContent() {
                 </div>
                 <h2 className="text-4xl font-bold">ZeitScan Testphase Beendet</h2>
                 <p className="text-green-50 text-lg max-w-lg mx-auto leading-relaxed">
-                  Ihre 30-tägige Testphase ist offiziell abgelaufen und die Projektfunktionen wurden temporär gesperrt.
+                  Ihre Testphase ist abgelaufen und die Projektfunktionen wurden temporär gesperrt.
                 </p>
               </div>
               <CardContent className="p-10 text-center space-y-8">
