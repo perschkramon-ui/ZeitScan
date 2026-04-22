@@ -39,6 +39,8 @@ export type AdminUser = {
   fullName?: string;
   isPremium: boolean;
   trialStartedAt?: string | null;
+  /** Per-user trial duration override (default 30) */
+  trialDays?: number;
   stripeCustomerId?: string;
   createdAt: string;
   /** If true, missing break times are automatically added per §4 ArbZG */

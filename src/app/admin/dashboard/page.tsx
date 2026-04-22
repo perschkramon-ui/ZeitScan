@@ -388,8 +388,9 @@ function DashboardContent() {
   const { data: adminData, isLoading: isAdminLoading } = useDoc<AdminUser>(adminDocQuery);
 
   // Neuer Benutzer: automatisch 30-Tage-Trial starten
+  // Guard: only fire for the user's OWN account (UID must match auth user)
   useEffect(() => {
-    if (activeAdminUid && user && !user.isAnonymous && !isAdminLoading && !adminData && firestore && !impersonateAdmin) {
+    if (activeAdminUid && user && !user.isAnonymous && !isAdminLoading && !adminData && firestore && !impersonateAdmin && activeAdminUid === user.uid) {
       setDocumentNonBlocking(doc(firestore, 'adminUsers', activeAdminUid), {
         email: user.email || '',
         isPremium: true,
@@ -400,8 +401,9 @@ function DashboardContent() {
   }, [user, adminData, isAdminLoading, firestore, activeAdminUid, impersonateAdmin]);
 
   // Bestehende Benutzer ohne trialStartedAt: Trial jetzt starten
+  // Guard: only for own account
   useEffect(() => {
-    if (activeAdminUid && user && !user.isAnonymous && adminData && !adminData.trialStartedAt && firestore && !impersonateAdmin) {
+    if (activeAdminUid && user && !user.isAnonymous && adminData && !adminData.trialStartedAt && firestore && !impersonateAdmin && activeAdminUid === user.uid) {
       updateDocumentNonBlocking(doc(firestore, 'adminUsers', activeAdminUid), {
         isPremium: true,
         trialStartedAt: new Date().toISOString(),
@@ -409,7 +411,7 @@ function DashboardContent() {
     }
   }, [user, adminData, firestore, activeAdminUid, impersonateAdmin]);
 
-  // Trial-Berechnung: 30 Tage ab trialStartedAt
+  // Trial-Berechnung: trialDays (default 30) ab trialStartedAt
   const { isFeatureActive, trialDaysLeft, trialExpired } = useMemo(() => {
     if (!adminData) return { isFeatureActive: false, trialDaysLeft: 0, trialExpired: false };
     if (!adminData.trialStartedAt) return { isFeatureActive: adminData.isPremium, trialDaysLeft: 0, trialExpired: false };
@@ -417,7 +419,8 @@ function DashboardContent() {
     const now = new Date();
     const diffMs = now.getTime() - start.getTime();
     const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-    const daysLeft = Math.max(0, 30 - diffDays);
+    const trialDuration = adminData.trialDays || 30;
+    const daysLeft = Math.max(0, trialDuration - diffDays);
     const expired = daysLeft <= 0;
     // Wenn Trial abgelaufen und isPremium noch true: automatisch deaktivieren
     if (expired && adminData.isPremium && firestore && activeAdminUid && !impersonateAdmin) {
@@ -581,8 +584,14 @@ function DashboardContent() {
 
         let effectiveMins: number;
         if (isPauseAdd) {
-          // Obstgärtla mode: Pause zählt als Arbeitszeit → Brutto verwenden
-          effectiveMins = grossMins;
+          // Obstgärtla / pauseAddMode: ArbZG-konforme Pausenberechnung
+          // Pflichtpause nach geleisteter Nettoarbeitszeit berechnen
+          const requiredBreak = getAutoBreakMins(netMins);
+          // Bereits genommene Pause anrechnen
+          const breakDeficit = Math.max(0, requiredBreak - actualPauseMins);
+          // Netto bleibt unverändert; fehlende Pause wird auf Endzeit draufgerechnet
+          // → Effektive Arbeitszeit = netto + fehlende Pause (wird zur Endzeit addiert)
+          effectiveMins = netMins + breakDeficit;
         } else if (autoBreak) {
           const requiredPause = getAutoBreakMins(netMins);
           const deficit = Math.max(0, requiredPause - actualPauseMins);
@@ -619,6 +628,7 @@ function DashboardContent() {
     });
 
     const autoBreakLog = adminData?.autoBreakDeduction === true;
+    const isPauseAddLog = viewingLogsEmployee.pauseAddMode === true;
 
     // Group work entries by day to compute net, gross and actual pause
     const workByDay = new Map<string, { entries: typeof filtered }>();
@@ -645,7 +655,12 @@ function DashboardContent() {
       const actualPauseMins = Math.max(0, grossMins - netMins);
 
       let effectiveMins = netMins;
-      if (autoBreakLog) {
+      if (isPauseAddLog) {
+        // pauseAddMode: Pflichtpause auf Endzeit draufrechnen
+        const requiredBreak = getAutoBreakMins(netMins);
+        const breakDeficit = Math.max(0, requiredBreak - actualPauseMins);
+        effectiveMins = netMins + breakDeficit;
+      } else if (autoBreakLog) {
         const requiredPause = getAutoBreakMins(netMins);
         const deficit = Math.max(0, requiredPause - actualPauseMins);
         effectiveMins = Math.max(0, netMins - deficit);
@@ -742,13 +757,43 @@ function DashboardContent() {
       const actualPauseMins = Math.max(0, grossMins - netMins);
 
       // §4 ArbZG: top-up pause to legal minimum if too little was taken
-      const requiredPause = (autoBreakDeduction && lastOut) ? getAutoBreakMins(netMins) : 0;
-      const pauseDeficit = Math.max(0, requiredPause - actualPauseMins);
-      const pauseMins = actualPauseMins + pauseDeficit;
-      const effectiveNetMins = lastOut ? Math.max(0, netMins - pauseDeficit) : netMins;
+      const isPauseAddEmp = emp.pauseAddMode === true;
+      let requiredPause: number;
+      let pauseDeficit: number;
+      let pauseMins: number;
+      let effectiveNetMins: number;
+      let displayedLastOut = lastOut;
 
-      // Auto-break label: show where the deficit pause is placed (first third of shift)
-      const autoBreakLabel = pauseDeficit > 0
+      if (isPauseAddEmp && lastOut) {
+        // pauseAddMode: Pflichtpause wird auf die Endzeit draufgerechnet
+        // und in der ersten Hälfte der Arbeitszeit eingefügt — keine Markierung
+        requiredPause = getAutoBreakMins(netMins);
+        pauseDeficit = Math.max(0, requiredPause - actualPauseMins);
+        pauseMins = actualPauseMins + pauseDeficit;
+        // Endzeit um fehlende Pause erweitern
+        displayedLastOut = new Date(lastOut.getTime() + pauseDeficit * 60000);
+        // Effektive Netto = original netto (Pause wird addiert, nicht abgezogen)
+        effectiveNetMins = netMins + pauseDeficit;
+      } else if (autoBreakDeduction && lastOut) {
+        requiredPause = getAutoBreakMins(netMins);
+        pauseDeficit = Math.max(0, requiredPause - actualPauseMins);
+        pauseMins = actualPauseMins + pauseDeficit;
+        effectiveNetMins = Math.max(0, netMins - pauseDeficit);
+      } else {
+        requiredPause = 0;
+        pauseDeficit = 0;
+        pauseMins = actualPauseMins;
+        effectiveNetMins = netMins;
+      }
+
+      // Displayed gross includes the extended end time for pauseAddMode
+      const displayedGrossMins = displayedLastOut
+        ? differenceInMinutes(displayedLastOut, firstIn)
+        : grossMins;
+
+      // Auto-break label: show where the deficit pause is placed (first half of shift)
+      // For pauseAddMode: no visible markers at all
+      const autoBreakLabel = (!isPauseAddEmp && pauseDeficit > 0)
         ? (() => {
             const breakStartMin = Math.round(grossMins * 0.33);
             const bs = new Date(firstIn.getTime() + breakStartMin * 60000);
@@ -757,20 +802,34 @@ function DashboardContent() {
           })()
         : null;
 
+      // For pauseAddMode: place break visually in first half, no auto-marker
+      let pauseAddBreakLabel: string | null = null;
+      if (isPauseAddEmp && pauseDeficit > 0 && lastOut) {
+        // Break in the first half of the shift
+        const halfShiftMin = Math.round(netMins / 2);
+        const bs = new Date(firstIn.getTime() + Math.round(halfShiftMin * 0.5) * 60000);
+        const be = new Date(bs.getTime() + pauseDeficit * 60000);
+        pauseAddBreakLabel = format(bs, 'HH:mm') + '–' + format(be, 'HH:mm');
+      }
+
       const scheduledBreak = scheduleByDate.get(dateKey);
       const plannedPauseLabel = scheduledBreak
         ? (scheduledBreak.breakStart + (scheduledBreak.breakEnd ? '\u2013' + scheduledBreak.breakEnd : ''))
         : '-';
       const hint = !lastOut ? 'noch aktiv' : (lastEntry.exitType === 'PAUSE' ? 'endet in Pause' : '');
 
-      const netLabel = pauseDeficit > 0 ? fmtDur(effectiveNetMins) : fmtDur(netMins);
-      const pauseLabel = pauseMins > 0 ? fmtDur(pauseMins) + (pauseDeficit > 0 ? ' (+' + pauseDeficit + 'min auto)' : '') : '-';
-      const breakHintLabel = autoBreakLabel || plannedPauseLabel;
-      const rowHint = pauseDeficit > 0 && autoBreakLabel
+      const netLabel = fmtDur(effectiveNetMins);
+      const pauseLabel = isPauseAddEmp
+        ? (pauseMins > 0 ? fmtDur(pauseMins) : '-')
+        : (pauseMins > 0 ? fmtDur(pauseMins) + (pauseDeficit > 0 ? ' (+' + pauseDeficit + 'min auto)' : '') : '-');
+      const breakHintLabel = isPauseAddEmp
+        ? (pauseAddBreakLabel || plannedPauseLabel)
+        : (autoBreakLabel || plannedPauseLabel);
+      const rowHint = (!isPauseAddEmp && pauseDeficit > 0 && autoBreakLabel)
         ? (hint ? hint + ' | ' : '') + 'Pause auto: ' + autoBreakLabel
         : hint;
-      rows += `${dateStr};${dayName};${format(firstIn, 'HH:mm')};${lastOut ? format(lastOut, 'HH:mm') : 'offen'};${fmtDur(grossMins)};${pauseLabel};${breakHintLabel};${netLabel};Arbeit;${rowHint}\n`;
-      totalNetMins += pauseDeficit > 0 ? effectiveNetMins : netMins;
+      rows += `${dateStr};${dayName};${format(firstIn, 'HH:mm')};${displayedLastOut ? format(displayedLastOut, 'HH:mm') : 'offen'};${fmtDur(displayedGrossMins)};${pauseLabel};${breakHintLabel};${netLabel};Arbeit;${rowHint}\n`;
+      totalNetMins += effectiveNetMins;
     });
 
     const totalH = Math.floor(totalNetMins / 60);
@@ -2010,10 +2069,11 @@ function DashboardContent() {
               <Card className="border-none shadow-xl rounded-2xl bg-white/90 max-w-2xl mx-auto">
                 <CardHeader className="text-center p-8">
                   <CreditCard className="w-12 h-12 text-primary mx-auto mb-4" />
-                  <CardTitle>Ihr Abonnement</CardTitle>
-                  <CardDescription>Verwalten Sie Ihre Pro-Funktionen.</CardDescription>
+                  <CardTitle>Abo &amp; Abrechnung</CardTitle>
+                  <CardDescription>Verwalten Sie Ihre Pro-Funktionen und Ihr Abonnement.</CardDescription>
                 </CardHeader>
                 <CardContent className="p-8 pt-0 space-y-8">
+                  {/* Current Plan Status */}
                   <div className="p-6 border-2 border-dashed rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 bg-muted/20">
                     <div className="space-y-1 text-center sm:text-left">
                       <h3 className="font-bold text-lg">ZeitScan Pro Plan</h3>
@@ -2026,6 +2086,102 @@ function DashboardContent() {
                     )}
                   </div>
 
+                  {/* Subscribe / Manage Section */}
+                  <div className="space-y-4">
+                    <Card className="border-2 border-primary/20 bg-gradient-to-br from-primary/5 to-primary/10 rounded-2xl overflow-hidden">
+                      <CardContent className="p-6 space-y-6">
+                        <div className="flex items-start gap-4">
+                          <div className="p-3 bg-white rounded-xl shadow-sm shrink-0">
+                            <Sparkles className="w-6 h-6 text-primary" />
+                          </div>
+                          <div className="space-y-1">
+                            <h4 className="font-bold text-lg">ZeitScan Pro</h4>
+                            <p className="text-sm text-muted-foreground">Unbegrenzter Zugriff auf alle Funktionen, unbegrenzte Mitarbeiter, CSV-Exporte, Dienstplanung und mehr.</p>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                          {[
+                            'Unbegrenzte Mitarbeiter',
+                            'Terminal & QR-Codes',
+                            'CSV-Exporte & Berichte',
+                            'Dienstplanung',
+                            'Urlaub- & Krankheitsverwaltung',
+                            'Überstundenverwaltung',
+                          ].map(feature => (
+                            <div key={feature} className="flex items-center gap-2 text-sm">
+                              <div className="w-1.5 h-1.5 rounded-full bg-primary shrink-0" />
+                              <span className="text-muted-foreground">{feature}</span>
+                            </div>
+                          ))}
+                        </div>
+
+                        <Separator />
+
+                        <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                          <div>
+                            <p className="text-xs text-muted-foreground uppercase font-semibold">Monatlich</p>
+                            <p className="text-2xl font-black text-foreground">9,99 € <span className="text-sm font-normal text-muted-foreground">/ Monat</span></p>
+                          </div>
+                          <Button
+                            size="lg"
+                            onClick={handleSubscribe}
+                            disabled={isCheckoutLoading}
+                            className="rounded-xl h-12 px-8 bg-green-600 hover:bg-green-700 text-white shadow-lg hover:shadow-xl transition-all gap-2 shrink-0"
+                          >
+                            {isCheckoutLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <CreditCard className="w-5 h-5" />}
+                            {isFeatureActive ? 'Jetzt abonnieren' : 'Pro Plan aktivieren'}
+                          </Button>
+                        </div>
+
+                        {isFeatureActive && (
+                          <p className="text-xs text-center text-muted-foreground">
+                            Abonnieren Sie jetzt — Ihre Testphase läuft nahtlos in das Abo über. Sichere Bezahlung über Stripe.
+                          </p>
+                        )}
+                      </CardContent>
+                    </Card>
+
+                    {/* Manage existing subscription */}
+                    <Card className="border rounded-2xl">
+                      <CardContent className="p-5 flex flex-col sm:flex-row items-center justify-between gap-4">
+                        <div className="text-sm text-muted-foreground text-center sm:text-left">
+                          <p className="font-medium text-foreground">Bestehendes Abo verwalten</p>
+                          <p>Rechnungen einsehen, Zahlungsmethode ändern oder Abo kündigen.</p>
+                        </div>
+                        <Button
+                          variant="outline"
+                          className="rounded-xl shrink-0 gap-2"
+                          onClick={async () => {
+                            try {
+                              setIsCheckoutLoading(true);
+                              const res = await fetch('/api/customer-portal', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ email: impersonateAdmin?.email || adminData?.email || user?.email })
+                              });
+                              const data = await res.json();
+                              if (data.url) {
+                                window.location.href = data.url;
+                              } else {
+                                toast({ title: 'Hinweis', description: data.error || 'Kundenportal nicht verfügbar.', variant: 'destructive' });
+                              }
+                            } catch {
+                              toast({ title: 'Fehler', description: 'Verbindung zum Portal fehlgeschlagen.', variant: 'destructive' });
+                            } finally {
+                              setIsCheckoutLoading(false);
+                            }
+                          }}
+                          disabled={isCheckoutLoading}
+                        >
+                          {isCheckoutLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
+                          Kundenportal öffnen
+                        </Button>
+                      </CardContent>
+                    </Card>
+                  </div>
+
+                  {/* Danger Zone */}
                   <div className="pt-8 border-t space-y-4">
                     <div className="flex items-center gap-2 text-destructive font-bold">
                       <LockIcon className="w-5 h-5" />
