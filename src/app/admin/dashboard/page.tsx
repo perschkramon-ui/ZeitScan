@@ -2129,7 +2129,7 @@ function DashboardContent() {
                         <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
                           <div>
                             <p className="text-xs text-muted-foreground uppercase font-semibold">Monatlich</p>
-                            <p className="text-2xl font-black text-foreground">9,99 € <span className="text-sm font-normal text-muted-foreground">/ Monat</span></p>
+                            <p className="text-2xl font-black text-foreground">10 € <span className="text-sm font-normal text-muted-foreground">/ Monat</span></p>
                           </div>
                           <Button
                             size="lg"
