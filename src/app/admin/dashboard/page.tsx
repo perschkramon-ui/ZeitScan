@@ -805,12 +805,16 @@ function DashboardContent() {
 
       // Auto-break label: show where the deficit pause is placed (first half of shift)
       // For pauseAddMode: no visible markers at all
+      const isObstgaertla = adminData?.email === OBSTGAERTLA_EMAIL || (impersonateAdmin && allAdmins?.find(a => a.id === impersonateAdmin.uid)?.email === OBSTGAERTLA_EMAIL);
       const autoBreakLabel = (!isPauseAddDay && pauseDeficit > 0)
         ? (() => {
             const breakStartMin = Math.round(grossMins * 0.33);
             const bs = new Date(firstIn.getTime() + breakStartMin * 60000);
             const be = new Date(bs.getTime() + pauseDeficit * 60000);
-            return format(bs, 'HH:mm') + '–' + format(be, 'HH:mm') + ' (+' + pauseDeficit + 'min §4 ArbZG)';
+            // Obstgärtla: keine "auto"/"§4 ArbZG" Marker — Pause sieht normal aus
+            return isObstgaertla
+              ? format(bs, 'HH:mm') + '–' + format(be, 'HH:mm')
+              : format(bs, 'HH:mm') + '–' + format(be, 'HH:mm') + ' (+' + pauseDeficit + 'min §4 ArbZG)';
           })()
         : null;
 
@@ -833,12 +837,12 @@ function DashboardContent() {
       const netLabel = fmtDur(effectiveNetMins);
       const pauseLabel = isPauseAddDay
         ? (pauseMins > 0 ? fmtDur(pauseMins) + ' (AG bezahlt)' : '-')
-        : (pauseMins > 0 ? fmtDur(pauseMins) + (pauseDeficit > 0 ? ' (+' + pauseDeficit + 'min auto)' : '') : '-');
+        : (pauseMins > 0 ? fmtDur(pauseMins) + (pauseDeficit > 0 && !isObstgaertla ? ' (+' + pauseDeficit + 'min auto)' : '') : '-');
       const breakHintLabel = isPauseAddDay
         ? (pauseAddBreakLabel || plannedPauseLabel)
         : (autoBreakLabel || plannedPauseLabel);
       const rowHint = (!isPauseAddDay && pauseDeficit > 0 && autoBreakLabel)
-        ? (hint ? hint + ' | ' : '') + 'Pause auto: ' + autoBreakLabel
+        ? (hint ? hint + ' | ' : '') + (isObstgaertla ? '' : 'Pause auto: ') + autoBreakLabel
         : (isPauseAddDay && pauseDeficit > 0 ? (hint ? hint + ' | ' : '') + '+Pause Modus (AG bezahlt)' : hint);
       rows += `${dateStr};${dayName};${format(firstIn, 'HH:mm')};${displayedLastOut ? format(displayedLastOut, 'HH:mm') : 'offen'};${fmtDur(displayedGrossMins)};${pauseLabel};${breakHintLabel};${netLabel};Arbeit;${rowHint}\n`;
       totalNetMins += effectiveNetMins;
