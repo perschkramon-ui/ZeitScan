@@ -836,14 +836,14 @@ function DashboardContent() {
 
       const netLabel = fmtDur(effectiveNetMins);
       const pauseLabel = isPauseAddDay
-        ? (pauseMins > 0 ? fmtDur(pauseMins) + ' (AG bezahlt)' : '-')
+        ? (pauseMins > 0 ? fmtDur(pauseMins) + (isObstgaertla ? '' : ' (AG bezahlt)') : '-')
         : (pauseMins > 0 ? fmtDur(pauseMins) + (pauseDeficit > 0 && !isObstgaertla ? ' (+' + pauseDeficit + 'min auto)' : '') : '-');
       const breakHintLabel = isPauseAddDay
         ? (pauseAddBreakLabel || plannedPauseLabel)
         : (autoBreakLabel || plannedPauseLabel);
       const rowHint = (!isPauseAddDay && pauseDeficit > 0 && autoBreakLabel)
         ? (hint ? hint + ' | ' : '') + (isObstgaertla ? '' : 'Pause auto: ') + autoBreakLabel
-        : (isPauseAddDay && pauseDeficit > 0 ? (hint ? hint + ' | ' : '') + '+Pause Modus (AG bezahlt)' : hint);
+        : (isPauseAddDay && pauseDeficit > 0 ? (hint ? hint + ' | ' : '') + (isObstgaertla ? '' : 'Pause Modus (AG bezahlt)') : hint);
       rows += `${dateStr};${dayName};${format(firstIn, 'HH:mm')};${displayedLastOut ? format(displayedLastOut, 'HH:mm') : 'offen'};${fmtDur(displayedGrossMins)};${pauseLabel};${breakHintLabel};${netLabel};Arbeit;${rowHint}\n`;
       totalNetMins += effectiveNetMins;
     });
