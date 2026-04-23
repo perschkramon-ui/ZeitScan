@@ -12,5 +12,5 @@ environmentVariables:
 
 secrets:
   - variable: STRIPE_SECRET_KEY
-    secret: firestore-stripe-payments-STRIPE_API_KEY
+    secret: STRIPE_SECRET_KEY
     version: latest

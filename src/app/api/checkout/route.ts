@@ -12,10 +12,11 @@ export async function POST(request: Request) {
     const secretKey = process.env.STRIPE_SECRET_KEY;
     
     if (!secretKey || secretKey.length < 10) {
-      console.error('Stripe Error: STRIPE_SECRET_KEY ist nicht korrekt konfiguriert.');
+      console.error('Stripe Error: STRIPE_SECRET_KEY ist nicht korrekt konfiguriert. Länge:', secretKey?.length || 0);
+      console.error('Vorhandene env vars mit STRIPE:', Object.keys(process.env).filter(k => k.includes('STRIPE')).join(', '));
       return NextResponse.json({ 
-        error: "Stripe API Key nicht konfiguriert oder ungültig." 
-      }, { status: 400 });
+        error: "Stripe API Key nicht konfiguriert oder ungültig. Bitte kontaktiere den Administrator." 
+      }, { status: 500 });
     }
 
     // Initialisierung ohne explizite Version, um Versions-Konflikte zu vermeiden
@@ -24,7 +25,8 @@ export async function POST(request: Request) {
     const priceId = process.env.STRIPE_PRICE_ID;
 
     if (!priceId) {
-      return NextResponse.json({ error: "Stripe Price ID fehlt." }, { status: 400 });
+      console.error('Stripe Error: STRIPE_PRICE_ID fehlt. Vorhandene env vars:', Object.keys(process.env).filter(k => k.includes('STRIPE')).join(', '));
+      return NextResponse.json({ error: "Stripe Price ID fehlt." }, { status: 500 });
     }
 
     const sessionOptions: Stripe.Checkout.SessionCreateParams = {
@@ -45,8 +47,6 @@ export async function POST(request: Request) {
         userId: userId,
       },
     };
-
-    // Keine E-Mail vorausfüllen, damit keine gespeicherten Zahlungsdaten übertragen werden
 
     const session = await stripe.checkout.sessions.create(sessionOptions);
 

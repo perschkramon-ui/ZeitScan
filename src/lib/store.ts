@@ -16,6 +16,10 @@ export type Employee = {
   isArchived?: boolean;
   /** Obstgärtla special: Pause wird zur Arbeitszeit hinzugezählt, nicht abgezogen */
   pauseAddMode?: boolean;
+  /** ISO date string: ab wann der pauseAddMode gilt */
+  pauseAddModeActivatedAt?: string | null;
+  /** ISO date string: bis wann der pauseAddMode gilt (nur bei Deaktivierung mit Zeitraum) */
+  pauseAddModeDeactivatedAt?: string | null;
   createdAt: string;
 };
 

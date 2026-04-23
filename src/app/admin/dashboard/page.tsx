@@ -312,10 +312,14 @@ function DashboardContent() {
   const [editVacation, setEditVacation] = useState('');
   const [editSickDays, setEditSickDays] = useState('');
   const [editPauseAddMode, setEditPauseAddMode] = useState(false);
-  // Retroactive break credit for Obstgärtla
-  const [retroFrom, setRetroFrom] = useState(format(startOfMonth(new Date()), 'yyyy-MM-dd'));
-  const [retroTo, setRetroTo] = useState(format(new Date(), 'yyyy-MM-dd'));
-  const [retroPreviewHours, setRetroPreviewHours] = useState<number | null>(null);
+  // Pause Add Mode Activation/Deactivation Dialogs
+  const [pauseActivationDialogOpen, setPauseActivationDialogOpen] = useState(false);
+  const [pauseActivationMode, setPauseActivationMode] = useState<'all' | 'date'>('all');
+  const [pauseActivationDate, setPauseActivationDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [pauseDeactivationDialogOpen, setPauseDeactivationDialogOpen] = useState(false);
+  const [pauseDeactivationMode, setPauseDeactivationMode] = useState<'full' | 'range'>('full');
+  const [pauseDeactivationFrom, setPauseDeactivationFrom] = useState('');
+  const [pauseDeactivationTo, setPauseDeactivationTo] = useState(format(new Date(), 'yyyy-MM-dd'));
 
   // Range-based Absence Booking State (inside Edit Dialog)
   const [absenceType, setAbsenceType] = useState<'VACATION' | 'SICK'>('VACATION');
@@ -537,6 +541,25 @@ function DashboardContent() {
     return 0;
   };
 
+  /**
+   * Prüft ob pauseAddMode für ein bestimmtes Datum aktiv ist.
+   * Berücksichtigt pauseAddModeActivatedAt und pauseAddModeDeactivatedAt.
+   */
+  const isPauseAddActiveForDate = (emp: Employee, dateKey: string): boolean => {
+    // Modus aktuell aktiv
+    if (emp.pauseAddMode) {
+      if (!emp.pauseAddModeActivatedAt) return true; // kein Startdatum = immer aktiv
+      return dateKey >= emp.pauseAddModeActivatedAt.slice(0, 10);
+    }
+    // Modus deaktiviert, aber mit historischem Zeitfenster
+    if (emp.pauseAddModeActivatedAt && emp.pauseAddModeDeactivatedAt) {
+      const actDate = emp.pauseAddModeActivatedAt.slice(0, 10);
+      const deactDate = emp.pauseAddModeDeactivatedAt.slice(0, 10);
+      return dateKey >= actDate && dateKey <= deactDate;
+    }
+    return false;
+  };
+
   const workedHoursMap = useMemo(() => {
     const map = new Map<string, number>();
     if (!timeEntries || !isFeatureActive) return map;
@@ -544,11 +567,6 @@ function DashboardContent() {
     const now = new Date();
     const startOfPeriod = period === 'weekly' ? startOfWeek(now, { weekStartsOn: 1 }) : startOfMonth(now);
     const autoBreak = adminData?.autoBreakDeduction === true;
-
-    // Build pauseAddMode lookup
-    const pauseAddModeSet = new Set<string>(
-      (employees || []).filter(e => e.pauseAddMode).map(e => e.id)
-    );
 
     // Group relevant work entries per employee per day
     const byEmpDay = new Map<string, Map<string, TimeEntry[]>>();
@@ -567,8 +585,8 @@ function DashboardContent() {
 
     byEmpDay.forEach((dayMap, empId) => {
       let totalMins = 0;
-      const isPauseAdd = pauseAddModeSet.has(empId);
-      dayMap.forEach((entries) => {
+      const emp = (employees || []).find(e => e.id === empId);
+      dayMap.forEach((entries, dateKey) => {
         let netMins = 0;
         let firstInTime = Infinity;
         let lastOutTime = 0;
@@ -583,15 +601,11 @@ function DashboardContent() {
         const actualPauseMins = Math.max(0, grossMins - netMins);
 
         let effectiveMins: number;
-        if (isPauseAdd) {
-          // Obstgärtla / pauseAddMode: ArbZG-konforme Pausenberechnung
-          // Pflichtpause nach geleisteter Nettoarbeitszeit berechnen
-          const requiredBreak = getAutoBreakMins(netMins);
-          // Bereits genommene Pause anrechnen
-          const breakDeficit = Math.max(0, requiredBreak - actualPauseMins);
-          // Netto bleibt unverändert; fehlende Pause wird auf Endzeit draufgerechnet
-          // → Effektive Arbeitszeit = netto + fehlende Pause (wird zur Endzeit addiert)
-          effectiveMins = netMins + breakDeficit;
+        const isPauseAddDay = emp ? isPauseAddActiveForDate(emp, dateKey) : false;
+        if (isPauseAddDay) {
+          // pauseAddMode: Arbeitgeber bezahlt Pause → Netto bleibt unverändert
+          // Keine Addition, keine Subtraktion der Pause
+          effectiveMins = netMins;
         } else if (autoBreak) {
           const requiredPause = getAutoBreakMins(netMins);
           const deficit = Math.max(0, requiredPause - actualPauseMins);
@@ -628,7 +642,6 @@ function DashboardContent() {
     });
 
     const autoBreakLog = adminData?.autoBreakDeduction === true;
-    const isPauseAddLog = viewingLogsEmployee.pauseAddMode === true;
 
     // Group work entries by day to compute net, gross and actual pause
     const workByDay = new Map<string, { entries: typeof filtered }>();
@@ -639,7 +652,7 @@ function DashboardContent() {
     });
 
     let totalWorkHours = 0;
-    workByDay.forEach(({ entries }) => {
+    workByDay.forEach(({ entries }, dateKey) => {
       const now = new Date();
       let netMins = 0;
       let firstInTime = Infinity;
@@ -655,11 +668,10 @@ function DashboardContent() {
       const actualPauseMins = Math.max(0, grossMins - netMins);
 
       let effectiveMins = netMins;
-      if (isPauseAddLog) {
-        // pauseAddMode: Pflichtpause auf Endzeit draufrechnen
-        const requiredBreak = getAutoBreakMins(netMins);
-        const breakDeficit = Math.max(0, requiredBreak - actualPauseMins);
-        effectiveMins = netMins + breakDeficit;
+      const isPauseAddDay = isPauseAddActiveForDate(viewingLogsEmployee, dateKey);
+      if (isPauseAddDay) {
+        // pauseAddMode: Netto bleibt unverändert — AG zahlt Pause
+        effectiveMins = netMins;
       } else if (autoBreakLog) {
         const requiredPause = getAutoBreakMins(netMins);
         const deficit = Math.max(0, requiredPause - actualPauseMins);
@@ -757,23 +769,23 @@ function DashboardContent() {
       const actualPauseMins = Math.max(0, grossMins - netMins);
 
       // §4 ArbZG: top-up pause to legal minimum if too little was taken
-      const isPauseAddEmp = emp.pauseAddMode === true;
+      const isPauseAddDay = isPauseAddActiveForDate(emp, dateKey);
       let requiredPause: number;
       let pauseDeficit: number;
       let pauseMins: number;
       let effectiveNetMins: number;
       let displayedLastOut = lastOut;
 
-      if (isPauseAddEmp && lastOut) {
-        // pauseAddMode: Pflichtpause wird auf die Endzeit draufgerechnet
-        // und in der ersten Hälfte der Arbeitszeit eingefügt — keine Markierung
+      if (isPauseAddDay && lastOut) {
+        // pauseAddMode: Pflichtpause wird dokumentiert (Endzeit erweitert,
+        // Pause in erster Hälfte), aber Netto bleibt UNVERÄNDERT — AG zahlt Pause
         requiredPause = getAutoBreakMins(netMins);
         pauseDeficit = Math.max(0, requiredPause - actualPauseMins);
         pauseMins = actualPauseMins + pauseDeficit;
-        // Endzeit um fehlende Pause erweitern
+        // Endzeit um fehlende Pause erweitern (nur Dokumentation)
         displayedLastOut = new Date(lastOut.getTime() + pauseDeficit * 60000);
-        // Effektive Netto = original netto (Pause wird addiert, nicht abgezogen)
-        effectiveNetMins = netMins + pauseDeficit;
+        // Netto bleibt gleich — Arbeitgeber bezahlt die Pause
+        effectiveNetMins = netMins;
       } else if (autoBreakDeduction && lastOut) {
         requiredPause = getAutoBreakMins(netMins);
         pauseDeficit = Math.max(0, requiredPause - actualPauseMins);
@@ -793,7 +805,7 @@ function DashboardContent() {
 
       // Auto-break label: show where the deficit pause is placed (first half of shift)
       // For pauseAddMode: no visible markers at all
-      const autoBreakLabel = (!isPauseAddEmp && pauseDeficit > 0)
+      const autoBreakLabel = (!isPauseAddDay && pauseDeficit > 0)
         ? (() => {
             const breakStartMin = Math.round(grossMins * 0.33);
             const bs = new Date(firstIn.getTime() + breakStartMin * 60000);
@@ -804,7 +816,7 @@ function DashboardContent() {
 
       // For pauseAddMode: place break visually in first half, no auto-marker
       let pauseAddBreakLabel: string | null = null;
-      if (isPauseAddEmp && pauseDeficit > 0 && lastOut) {
+      if (isPauseAddDay && pauseDeficit > 0 && lastOut) {
         // Break in the first half of the shift
         const halfShiftMin = Math.round(netMins / 2);
         const bs = new Date(firstIn.getTime() + Math.round(halfShiftMin * 0.5) * 60000);
@@ -819,15 +831,15 @@ function DashboardContent() {
       const hint = !lastOut ? 'noch aktiv' : (lastEntry.exitType === 'PAUSE' ? 'endet in Pause' : '');
 
       const netLabel = fmtDur(effectiveNetMins);
-      const pauseLabel = isPauseAddEmp
-        ? (pauseMins > 0 ? fmtDur(pauseMins) : '-')
+      const pauseLabel = isPauseAddDay
+        ? (pauseMins > 0 ? fmtDur(pauseMins) + ' (AG bezahlt)' : '-')
         : (pauseMins > 0 ? fmtDur(pauseMins) + (pauseDeficit > 0 ? ' (+' + pauseDeficit + 'min auto)' : '') : '-');
-      const breakHintLabel = isPauseAddEmp
+      const breakHintLabel = isPauseAddDay
         ? (pauseAddBreakLabel || plannedPauseLabel)
         : (autoBreakLabel || plannedPauseLabel);
-      const rowHint = (!isPauseAddEmp && pauseDeficit > 0 && autoBreakLabel)
+      const rowHint = (!isPauseAddDay && pauseDeficit > 0 && autoBreakLabel)
         ? (hint ? hint + ' | ' : '') + 'Pause auto: ' + autoBreakLabel
-        : hint;
+        : (isPauseAddDay && pauseDeficit > 0 ? (hint ? hint + ' | ' : '') + '+Pause Modus (AG bezahlt)' : hint);
       rows += `${dateStr};${dayName};${format(firstIn, 'HH:mm')};${displayedLastOut ? format(displayedLastOut, 'HH:mm') : 'offen'};${fmtDur(displayedGrossMins)};${pauseLabel};${breakHintLabel};${netLabel};Arbeit;${rowHint}\n`;
       totalNetMins += effectiveNetMins;
     });
@@ -1033,107 +1045,67 @@ function DashboardContent() {
       agreedHoursPeriod: editPeriod,
       vacationDays: Number(editVacation),
       sickDays: Number(editSickDays),
-      pauseAddMode: editPauseAddMode,
     });
     toast({ title: "Aktualisiert", description: "Daten wurden gespeichert." });
     setEditingEmployee(null);
   };
 
   /**
-   * Obstgärtla-exclusive: Scans all time entries for the employee in the selected
-   * date range, computes the total pause gap (gross – net per day), and credits that
-   * amount to the employee’s overtimeBalance.
+   * +Pause Modus AKTIVIEREN: speichert pauseAddMode=true + pauseAddModeActivatedAt
    */
-  const handleRetroactiveBreakCredit = () => {
-    if (!editingEmployee || !firestore || !retroFrom || !retroTo) return;
-    const from = parseISO(retroFrom);
-    const to   = new Date(`${retroTo}T23:59:59`);
-
-    // Filter entries for this employee within range
-    const relevant = (timeEntries || []).filter(e => {
-      if (e.entryType && e.entryType !== 'WORK') return false;
-      if (e.employeeId !== editingEmployee.id) return false;
-      const d = parseISO(e.clockInTime);
-      return d >= from && d <= to;
-    });
-
-    if (relevant.length === 0) {
-      toast({ title: "Keine Einträge", description: "Im gewählten Zeitraum wurden keine Buchungen gefunden.", variant: "destructive" });
-      return;
-    }
-
-    // Group by calendar day
-    const byDay = new Map<string, TimeEntry[]>();
-    relevant.forEach(e => {
-      const key = format(parseISO(e.clockInTime), 'yyyy-MM-dd');
-      if (!byDay.has(key)) byDay.set(key, []);
-      byDay.get(key)!.push(e);
-    });
-
-    // For each day: gross span − net sum = actual pause gap
-    let totalPauseMins = 0;
-    byDay.forEach(entries => {
-      let netMins = 0;
-      let firstIn  = Infinity;
-      let lastOut  = 0;
-      entries.forEach(e => {
-        const inT  = parseISO(e.clockInTime).getTime();
-        const outT = e.clockOutTime ? parseISO(e.clockOutTime).getTime() : Date.now();
-        netMins += (outT - inT) / 60000;
-        firstIn  = Math.min(firstIn, inT);
-        lastOut  = Math.max(lastOut, outT);
-      });
-      const grossMins = (lastOut - firstIn) / 60000;
-      totalPauseMins += Math.max(0, grossMins - netMins);
-    });
-
-    if (totalPauseMins < 1) {
-      toast({ title: "Keine Pausenzeit", description: "Im Zeitraum wurden keine Pausen gefunden – nichts zu gutschreiben." });
-      return;
-    }
-
-    const creditHours = totalPauseMins / 60;
-    const newBalance  = (editingEmployee.overtimeBalance || 0) + creditHours;
+  const handlePauseActivation = () => {
+    if (!editingEmployee || !firestore) return;
+    const activatedAt = pauseActivationMode === 'all'
+      ? (editingEmployee.createdAt || '2020-01-01')
+      : pauseActivationDate;
     updateDocumentNonBlocking(doc(firestore, 'employees', editingEmployee.id), {
-      overtimeBalance: newBalance,
+      pauseAddMode: true,
+      pauseAddModeActivatedAt: activatedAt,
+      pauseAddModeDeactivatedAt: null,
     });
-    const h = Math.floor(creditHours); const m = Math.round((creditHours - h) * 60);
+    setEditPauseAddMode(true);
+    setPauseActivationDialogOpen(false);
     toast({
-      title: "✅ Pausenguthaben rückwirkend gutgeschrieben",
-      description: `${h}h ${m}min (${byDay.size} Tage) wurden dem Zeitkonto von ${editingEmployee.fullName} hinzugefügt.`,
+      title: "✅ +Pause Modus aktiviert",
+      description: pauseActivationMode === 'all'
+        ? `Für ${editingEmployee.fullName} – gesamter Zeitraum.`
+        : `Für ${editingEmployee.fullName} – ab ${format(parseISO(pauseActivationDate), 'dd.MM.yyyy')}.`,
     });
-    setRetroPreviewHours(null);
   };
 
-  /** Preview only – zeigt wie viel es wäre ohne zu buchen */
-  const handlePreviewRetroCredit = () => {
-    if (!editingEmployee || !retroFrom || !retroTo) return;
-    const from = parseISO(retroFrom);
-    const to   = new Date(`${retroTo}T23:59:59`);
-    const relevant = (timeEntries || []).filter(e => {
-      if (e.entryType && e.entryType !== 'WORK') return false;
-      if (e.employeeId !== editingEmployee.id) return false;
-      const d = parseISO(e.clockInTime);
-      return d >= from && d <= to;
-    });
-    const byDay = new Map<string, TimeEntry[]>();
-    relevant.forEach(e => {
-      const key = format(parseISO(e.clockInTime), 'yyyy-MM-dd');
-      if (!byDay.has(key)) byDay.set(key, []);
-      byDay.get(key)!.push(e);
-    });
-    let totalPauseMins = 0;
-    byDay.forEach(entries => {
-      let netMins = 0; let firstIn = Infinity; let lastOut = 0;
-      entries.forEach(e => {
-        const inT = parseISO(e.clockInTime).getTime();
-        const outT = e.clockOutTime ? parseISO(e.clockOutTime).getTime() : Date.now();
-        netMins += (outT - inT) / 60000;
-        firstIn = Math.min(firstIn, inT); lastOut = Math.max(lastOut, outT);
+  /**
+   * +Pause Modus DEAKTIVIEREN (Fehlerkorrektur):
+   * - "full": Komplett rückwirkend → alles löschen
+   * - "range": Nur für von-bis → Modus aus, aber Effekt bleibt im Fenster
+   */
+  const handlePauseDeactivation = () => {
+    if (!editingEmployee || !firestore) return;
+    if (pauseDeactivationMode === 'full') {
+      // Vollständig rückwirkend – als wäre es nie aktiviert worden
+      updateDocumentNonBlocking(doc(firestore, 'employees', editingEmployee.id), {
+        pauseAddMode: false,
+        pauseAddModeActivatedAt: null,
+        pauseAddModeDeactivatedAt: null,
       });
-      totalPauseMins += Math.max(0, (lastOut - firstIn) / 60000 - netMins);
-    });
-    setRetroPreviewHours(totalPauseMins / 60);
+      setEditPauseAddMode(false);
+      toast({
+        title: "🔄 +Pause Modus vollständig deaktiviert",
+        description: `Alle Pausenberechnungen für ${editingEmployee.fullName} wurden rückwirkend entfernt.`,
+      });
+    } else {
+      // Teilweise rückwirkend – Effekt bleibt nur im angegebenen Zeitfenster
+      updateDocumentNonBlocking(doc(firestore, 'employees', editingEmployee.id), {
+        pauseAddMode: false,
+        pauseAddModeActivatedAt: pauseDeactivationFrom || editingEmployee.pauseAddModeActivatedAt,
+        pauseAddModeDeactivatedAt: pauseDeactivationTo,
+      });
+      setEditPauseAddMode(false);
+      toast({
+        title: "🔄 +Pause Modus teilweise deaktiviert",
+        description: `Effekt bleibt für ${format(parseISO(pauseDeactivationFrom || editingEmployee.pauseAddModeActivatedAt || ''), 'dd.MM.yyyy')} bis ${format(parseISO(pauseDeactivationTo), 'dd.MM.yyyy')}.`,
+      });
+    }
+    setPauseDeactivationDialogOpen(false);
   };
 
   const handleBookRangeAbsence = () => {
@@ -1544,7 +1516,7 @@ function DashboardContent() {
                             <UtensilsCrossed className="w-4 h-4 text-amber-600" />
                             <div>
                               <p className="text-sm font-bold text-amber-800">+Pause Modus</p>
-                              <p className="text-xs text-amber-700">Pausenzeit wird zur Arbeitszeit hinzugerechnet</p>
+                              <p className="text-xs text-amber-700">AG bezahlt Pausenzeit – Netto bleibt unverändert</p>
                             </div>
                           </div>
                           <Switch
@@ -2412,98 +2384,189 @@ function DashboardContent() {
                     <UtensilsCrossed className="w-4 h-4 text-amber-600" />
                     <div>
                       <p className="text-sm font-bold text-amber-800">+Pause Modus</p>
-                      <p className="text-xs text-amber-700">Pausenzeit wird zur Arbeitszeit hinzugerechnet</p>
+                      <p className="text-xs text-amber-700">AG bezahlt Pausenzeit – Netto bleibt unverändert</p>
                     </div>
                   </div>
-                  <Switch
-                    checked={editPauseAddMode}
-                    onCheckedChange={(v) => { setEditPauseAddMode(v); setRetroPreviewHours(null); }}
-                    id="edit-pause-add-mode"
-                  />
+                  {editPauseAddMode ? (
+                    <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300">Aktiv</Badge>
+                  ) : (
+                    editingEmployee?.pauseAddModeActivatedAt && editingEmployee?.pauseAddModeDeactivatedAt ? (
+                      <Badge className="bg-gray-100 text-gray-600 border-gray-300">Historisch</Badge>
+                    ) : (
+                      <Badge className="bg-gray-100 text-gray-500 border-gray-200">Inaktiv</Badge>
+                    )
+                  )}
                 </div>
 
-                {/* Rückwirkende Gutschrift — nur wenn +Pause aktiv */}
-                {editPauseAddMode && (
-                  <div className="p-4 bg-amber-50 border border-amber-300 rounded-xl space-y-3">
-                    <div className="flex items-center gap-2">
-                      <History className="w-4 h-4 text-amber-700" />
-                      <p className="text-sm font-bold text-amber-800">Rückwirkende Pausengutschrift</p>
-                    </div>
-                    <p className="text-xs text-amber-700">
-                      Berechnet die gesamte Pausenzeit des Mitarbeiters im gewählten Zeitraum und schreibt sie dem Zeitkonto gut.
-                    </p>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div className="space-y-1">
-                        <Label className="text-[10px] text-amber-800">Von</Label>
-                        <Input
-                          type="date"
-                          className="h-9 text-xs bg-white"
-                          value={retroFrom}
-                          onChange={(e) => { setRetroFrom(e.target.value); setRetroPreviewHours(null); }}
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <Label className="text-[10px] text-amber-800">Bis</Label>
-                        <Input
-                          type="date"
-                          className="h-9 text-xs bg-white"
-                          value={retroTo}
-                          max={format(new Date(), 'yyyy-MM-dd')}
-                          onChange={(e) => { setRetroTo(e.target.value); setRetroPreviewHours(null); }}
-                        />
-                      </div>
-                    </div>
-
-                    {/* Schnellwahl */}
-                    <div className="flex gap-1 flex-wrap">
-                      {[
-                        { label: 'Akt. Monat', from: format(startOfMonth(new Date()), 'yyyy-MM-dd'), to: format(new Date(), 'yyyy-MM-dd') },
-                        { label: 'Letz. Monat', from: format(startOfMonth(subDays(startOfMonth(new Date()), 1)), 'yyyy-MM-dd'), to: format(subDays(startOfMonth(new Date()), 1), 'yyyy-MM-dd') },
-                        { label: 'Akt. Jahr', from: format(new Date(new Date().getFullYear(), 0, 1), 'yyyy-MM-dd'), to: format(new Date(), 'yyyy-MM-dd') },
-                      ].map(q => (
-                        <button
-                          key={q.label}
-                          onClick={() => { setRetroFrom(q.from); setRetroTo(q.to); setRetroPreviewHours(null); }}
-                          className="px-2 py-1 text-[10px] bg-amber-100 hover:bg-amber-200 text-amber-800 rounded-lg border border-amber-300 transition-colors"
-                        >
-                          {q.label}
-                        </button>
-                      ))}
-                    </div>
-
-                    {/* Preview Result */}
-                    {retroPreviewHours !== null && (
-                      <div className="bg-white border border-amber-300 rounded-lg p-3 flex items-center justify-between">
-                        <div>
-                          <p className="text-[10px] text-muted-foreground uppercase font-semibold">Pausenguthaben im Zeitraum</p>
-                          <p className="font-black text-amber-800 text-lg">
-                            {Math.floor(retroPreviewHours)}h {Math.round((retroPreviewHours - Math.floor(retroPreviewHours)) * 60)}min
-                          </p>
-                        </div>
-                        <Sparkles className="w-5 h-5 text-amber-500" />
-                      </div>
-                    )}
-
-                    <div className="flex gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="flex-1 text-xs border-amber-300 text-amber-800 hover:bg-amber-100"
-                        onClick={handlePreviewRetroCredit}
-                      >
-                        Vorschau berechnen
-                      </Button>
-                      <Button
-                        size="sm"
-                        className="flex-1 text-xs bg-amber-600 hover:bg-amber-700 text-white"
-                        onClick={handleRetroactiveBreakCredit}
-                        disabled={retroPreviewHours === null || retroPreviewHours === 0}
-                      >
-                        <Sparkles className="w-3 h-3 mr-1" /> Gutschreiben
-                      </Button>
-                    </div>
-                  </div>
+                {/* Status Info */}
+                {editPauseAddMode && editingEmployee?.pauseAddModeActivatedAt && (
+                  <p className="text-[10px] text-amber-700 px-1">
+                    ✅ Aktiv seit {format(parseISO(editingEmployee.pauseAddModeActivatedAt), 'dd.MM.yyyy')}
+                  </p>
                 )}
+                {!editPauseAddMode && editingEmployee?.pauseAddModeActivatedAt && editingEmployee?.pauseAddModeDeactivatedAt && (
+                  <p className="text-[10px] text-gray-500 px-1">
+                    📋 Historisch: {format(parseISO(editingEmployee.pauseAddModeActivatedAt), 'dd.MM.yyyy')} – {format(parseISO(editingEmployee.pauseAddModeDeactivatedAt), 'dd.MM.yyyy')}
+                  </p>
+                )}
+
+                {/* Aktivieren / Deaktivieren Buttons */}
+                <div className="flex gap-2">
+                  {!editPauseAddMode && (
+                    <Button
+                      size="sm"
+                      className="flex-1 text-xs bg-amber-600 hover:bg-amber-700 text-white"
+                      onClick={() => {
+                        setPauseActivationMode('all');
+                        setPauseActivationDate(format(new Date(), 'yyyy-MM-dd'));
+                        setPauseActivationDialogOpen(true);
+                      }}
+                    >
+                      <Play className="w-3 h-3 mr-1" /> Aktivieren
+                    </Button>
+                  )}
+                  {editPauseAddMode && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="flex-1 text-xs border-red-300 text-red-700 hover:bg-red-50"
+                      onClick={() => {
+                        setPauseDeactivationMode('full');
+                        setPauseDeactivationFrom(editingEmployee?.pauseAddModeActivatedAt?.slice(0, 10) || '');
+                        setPauseDeactivationTo(format(new Date(), 'yyyy-MM-dd'));
+                        setPauseDeactivationDialogOpen(true);
+                      }}
+                    >
+                      <RotateCcw className="w-3 h-3 mr-1" /> Deaktivieren
+                    </Button>
+                  )}
+                </div>
+
+                {/* AKTIVIERUNGS-Dialog */}
+                <Dialog open={pauseActivationDialogOpen} onOpenChange={setPauseActivationDialogOpen}>
+                  <DialogContent className="max-w-sm">
+                    <DialogHeader>
+                      <DialogTitle className="flex items-center gap-2">
+                        <UtensilsCrossed className="w-5 h-5 text-amber-600" />
+                        +Pause Modus aktivieren
+                      </DialogTitle>
+                      <DialogDescription>
+                        Ab wann soll der Modus für <strong>{editingEmployee?.fullName}</strong> gelten?
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4 py-2">
+                      <div className="space-y-2">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="pause-activation"
+                            checked={pauseActivationMode === 'all'}
+                            onChange={() => setPauseActivationMode('all')}
+                            className="accent-amber-600"
+                          />
+                          <span className="text-sm font-medium">Gesamter Zeitraum</span>
+                        </label>
+                        <p className="text-[10px] text-muted-foreground ml-5">Gilt für alle vorhandenen Einträge.</p>
+                      </div>
+                      <div className="space-y-2">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="pause-activation"
+                            checked={pauseActivationMode === 'date'}
+                            onChange={() => setPauseActivationMode('date')}
+                            className="accent-amber-600"
+                          />
+                          <span className="text-sm font-medium">Ab bestimmtem Datum</span>
+                        </label>
+                        {pauseActivationMode === 'date' && (
+                          <Input
+                            type="date"
+                            className="h-9 text-xs ml-5 max-w-[200px]"
+                            value={pauseActivationDate}
+                            onChange={(e) => setPauseActivationDate(e.target.value)}
+                          />
+                        )}
+                      </div>
+                    </div>
+                    <DialogFooter>
+                      <Button variant="outline" size="sm" onClick={() => setPauseActivationDialogOpen(false)}>Abbrechen</Button>
+                      <Button size="sm" className="bg-amber-600 hover:bg-amber-700 text-white" onClick={handlePauseActivation}>
+                        <Sparkles className="w-3 h-3 mr-1" /> Aktivieren
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+
+                {/* DEAKTIVIERUNGS-Dialog (Fehlerkorrektur) */}
+                <Dialog open={pauseDeactivationDialogOpen} onOpenChange={setPauseDeactivationDialogOpen}>
+                  <DialogContent className="max-w-sm">
+                    <DialogHeader>
+                      <DialogTitle className="flex items-center gap-2">
+                        <RotateCcw className="w-5 h-5 text-red-500" />
+                        +Pause Modus deaktivieren
+                      </DialogTitle>
+                      <DialogDescription>
+                        Fehlerkorrektur für <strong>{editingEmployee?.fullName}</strong>. Wie soll deaktiviert werden?
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4 py-2">
+                      <div className="space-y-2">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="pause-deactivation"
+                            checked={pauseDeactivationMode === 'full'}
+                            onChange={() => setPauseDeactivationMode('full')}
+                            className="accent-red-600"
+                          />
+                          <span className="text-sm font-medium">Vollständig rückwirkend</span>
+                        </label>
+                        <p className="text-[10px] text-muted-foreground ml-5">Komplett entfernen – als wäre der Modus nie aktiviert worden.</p>
+                      </div>
+                      <div className="space-y-2">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="pause-deactivation"
+                            checked={pauseDeactivationMode === 'range'}
+                            onChange={() => setPauseDeactivationMode('range')}
+                            className="accent-red-600"
+                          />
+                          <span className="text-sm font-medium">Nur für bestimmten Zeitraum behalten</span>
+                        </label>
+                        {pauseDeactivationMode === 'range' && (
+                          <div className="grid grid-cols-2 gap-2 ml-5">
+                            <div className="space-y-1">
+                              <Label className="text-[10px] text-muted-foreground">Von</Label>
+                              <Input
+                                type="date"
+                                className="h-9 text-xs"
+                                value={pauseDeactivationFrom}
+                                onChange={(e) => setPauseDeactivationFrom(e.target.value)}
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-[10px] text-muted-foreground">Bis</Label>
+                              <Input
+                                type="date"
+                                className="h-9 text-xs"
+                                value={pauseDeactivationTo}
+                                onChange={(e) => setPauseDeactivationTo(e.target.value)}
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <DialogFooter>
+                      <Button variant="outline" size="sm" onClick={() => setPauseDeactivationDialogOpen(false)}>Abbrechen</Button>
+                      <Button size="sm" variant="destructive" onClick={handlePauseDeactivation}>
+                        <RotateCcw className="w-3 h-3 mr-1" /> Deaktivieren
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
               </div>
             )}
 

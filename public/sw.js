@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'zeitScan-v1';
+const CACHE_NAME = 'zeitScan-v2';
 const urlsToCache = [
   '/',
   '/offline.html',
@@ -39,7 +39,7 @@ self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // Skip non-GET requests
+  // Skip non-GET requests (POST to /api/checkout etc.)
   if (request.method !== 'GET') {
     return;
   }
@@ -49,42 +49,26 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // API calls: Network first, fallback to cache
+  // Skip API calls entirely — let them go straight to network
+  // API routes should never be cached by the SW, especially POST-heavy ones like /api/checkout
   if (url.pathname.startsWith('/api/')) {
-    event.respondWith(
-      fetch(request)
-        .then((response) => {
-          if (response.ok) {
-            const cache = caches.open(CACHE_NAME);
-            cache.then((c) => c.put(request, response.clone()));
-          }
-          return response;
-        })
-        .catch(() => {
-          return caches.match(request).then((response) => {
-            if (response) return response;
-            return new Response(
-              JSON.stringify({ error: 'Offline: Could not fetch' }),
-              { status: 503, headers: { 'Content-Type': 'application/json' } }
-            );
-          });
-        })
-    );
     return;
   }
 
   // Static assets: Cache first, fallback to network
   if (/\.(js|css|png|jpg|jpeg|svg|gif|webp|woff|woff2|ttf|eot)$/.test(url.pathname)) {
     event.respondWith(
-      caches.match(request).then((response) => {
-        if (response) return response;
-        return fetch(request).then((response) => {
-          if (response.ok && request.method === 'GET') {
+      caches.match(request).then((cachedResponse) => {
+        if (cachedResponse) return cachedResponse;
+        return fetch(request).then((networkResponse) => {
+          // Clone BEFORE consuming
+          if (networkResponse.ok) {
+            const cloned = networkResponse.clone();
             caches.open(CACHE_NAME).then((cache) => {
-              cache.put(request, response.clone());
+              cache.put(request, cloned);
             });
           }
-          return response;
+          return networkResponse;
         }).catch(() => {
           return new Response('Resource not available offline', { status: 503 });
         });
@@ -96,17 +80,19 @@ self.addEventListener('fetch', (event) => {
   // HTML pages: Network first, fallback to cache
   event.respondWith(
     fetch(request)
-      .then((response) => {
-        if (response.ok) {
+      .then((networkResponse) => {
+        // Clone BEFORE consuming
+        if (networkResponse.ok) {
+          const cloned = networkResponse.clone();
           caches.open(CACHE_NAME).then((cache) => {
-            cache.put(request, response.clone());
+            cache.put(request, cloned);
           });
         }
-        return response;
+        return networkResponse;
       })
       .catch(() => {
-        return caches.match(request).then((response) => {
-          if (response) return response;
+        return caches.match(request).then((cachedResponse) => {
+          if (cachedResponse) return cachedResponse;
           // Redirect to offline page if available
           return caches.match('/offline.html').then((offlinePage) => {
             if (offlinePage) return offlinePage;
