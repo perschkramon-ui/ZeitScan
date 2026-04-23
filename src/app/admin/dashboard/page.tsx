@@ -567,6 +567,7 @@ function DashboardContent() {
     const now = new Date();
     const startOfPeriod = period === 'weekly' ? startOfWeek(now, { weekStartsOn: 1 }) : startOfMonth(now);
     const autoBreak = adminData?.autoBreakDeduction === true;
+    const isObstHours = adminData?.email === OBSTGAERTLA_EMAIL;
 
     // Group relevant work entries per employee per day
     const byEmpDay = new Map<string, Map<string, TimeEntry[]>>();
@@ -590,8 +591,21 @@ function DashboardContent() {
         let netMins = 0;
         let firstInTime = Infinity;
         let lastOutTime = 0;
+        // Obstgärtla: cap to scheduled shift start
+        const empSchedule = isObstHours && schedules
+          ? schedules.find(s => s.employeeId === empId && s.date === dateKey)
+          : null;
+        let scheduledStartMs: number | null = null;
+        if (empSchedule?.shiftStart) {
+          const [sh, sm] = empSchedule.shiftStart.split(':').map(Number);
+          const sd = new Date(dateKey + 'T00:00:00');
+          sd.setHours(sh, sm, 0, 0);
+          scheduledStartMs = sd.getTime();
+        }
         entries.forEach(e => {
-          const inT = parseISO(e.clockInTime).getTime();
+          let inT = parseISO(e.clockInTime).getTime();
+          // Cap to scheduled start
+          if (scheduledStartMs && inT < scheduledStartMs) inT = scheduledStartMs;
           const outT = e.clockOutTime ? parseISO(e.clockOutTime).getTime() : now.getTime();
           netMins += (outT - inT) / 60000;
           firstInTime = Math.min(firstInTime, inT);
@@ -619,7 +633,7 @@ function DashboardContent() {
     });
 
     return map;
-  }, [timeEntries, period, isFeatureActive, adminData, employees]);
+  }, [timeEntries, period, isFeatureActive, adminData, employees, schedules]);
 
   const filteredEmployees = useMemo(() => {
     if (!employees) return [];
@@ -642,6 +656,7 @@ function DashboardContent() {
     });
 
     const autoBreakLog = adminData?.autoBreakDeduction === true;
+    const isObstLogs = adminData?.email === OBSTGAERTLA_EMAIL;
 
     // Group work entries by day to compute net, gross and actual pause
     const workByDay = new Map<string, { entries: typeof filtered }>();
@@ -657,8 +672,20 @@ function DashboardContent() {
       let netMins = 0;
       let firstInTime = Infinity;
       let lastOutTime = 0;
+      // Obstgärtla: cap to scheduled shift start
+      const empSch = isObstLogs && schedules
+        ? schedules.find(s => s.employeeId === viewingLogsEmployee.id && s.date === dateKey)
+        : null;
+      let schStartMs: number | null = null;
+      if (empSch?.shiftStart) {
+        const [sh, sm] = empSch.shiftStart.split(':').map(Number);
+        const sd = new Date(dateKey + 'T00:00:00');
+        sd.setHours(sh, sm, 0, 0);
+        schStartMs = sd.getTime();
+      }
       entries.forEach(e => {
-        const inT = parseISO(e.clockInTime).getTime();
+        let inT = parseISO(e.clockInTime).getTime();
+        if (schStartMs && inT < schStartMs) inT = schStartMs;
         const outT = e.clockOutTime ? parseISO(e.clockOutTime).getTime() : now.getTime();
         netMins += (outT - inT) / 60000;
         firstInTime = Math.min(firstInTime, inT);
@@ -692,7 +719,7 @@ function DashboardContent() {
       }
       return acc;
     }, { work: totalWorkHours, vacation: 0, sick: 0 });
-  }, [viewingLogsEmployee, timeEntries, logsFilter, adminData]);
+  }, [viewingLogsEmployee, timeEntries, logsFilter, adminData, schedules]);
 
   const fmtDur = (mins: number) => {
     const h = Math.floor(Math.abs(mins) / 60);
@@ -717,11 +744,13 @@ function DashboardContent() {
     let bookedVacDays = 0;
     let bookedSickDays = 0;
 
-    // Build a map of scheduled breaks by date for this employee
-    const scheduleByDate = new Map();
+    // Build a map of schedules by date for this employee
+    const scheduleByDate = new Map<string, ScheduleEntry>();
     (empSchedules || []).forEach(s => {
-      if (s.breakStart) scheduleByDate.set(s.date, s);
+      scheduleByDate.set(s.date, s);
     });
+
+    const isObstgaertla = adminData?.email === OBSTGAERTLA_EMAIL || (impersonateAdmin && allAdmins?.find(a => a.id === impersonateAdmin.uid)?.email === OBSTGAERTLA_EMAIL);
 
     [...byDate.keys()].sort().forEach(dateKey => {
       const dayEntries = byDate.get(dateKey)!;
@@ -751,17 +780,35 @@ function DashboardContent() {
 
       if (workEntries.length === 0) return;
 
-      const firstIn = parseISO(workEntries[0].clockInTime);
+      let firstIn = parseISO(workEntries[0].clockInTime);
       const lastEntry = workEntries[workEntries.length - 1];
       const lastOut = lastEntry.clockOutTime ? parseISO(lastEntry.clockOutTime) : null;
+
+      // Obstgärtla: Arbeitszeit beginnt erst ab geplantem Schichtbeginn
+      const daySchedule = scheduleByDate.get(dateKey);
+      const isObstgaertlaShiftCap = isObstgaertla && daySchedule?.shiftStart;
+      let scheduledStart: Date | null = null;
+      if (isObstgaertlaShiftCap) {
+        const [sh, sm] = daySchedule!.shiftStart.split(':').map(Number);
+        scheduledStart = new Date(firstIn);
+        scheduledStart.setHours(sh, sm, 0, 0);
+      }
 
       // Net = sum of each individual work segment
       let netMins = 0;
       workEntries.forEach(e => {
-        const inT = parseISO(e.clockInTime);
+        let inT = parseISO(e.clockInTime);
         const outT = e.clockOutTime ? parseISO(e.clockOutTime) : new Date();
+        // Cap clock-in to scheduled start if MA clocked in early
+        if (scheduledStart && inT < scheduledStart) {
+          inT = scheduledStart;
+        }
         netMins += Math.max(0, differenceInMinutes(outT, inT));
       });
+      // Also cap firstIn for gross/display
+      if (scheduledStart && firstIn < scheduledStart) {
+        firstIn = scheduledStart;
+      }
 
       const grossMins = lastOut
         ? differenceInMinutes(lastOut, firstIn)
@@ -805,7 +852,6 @@ function DashboardContent() {
 
       // Auto-break label: show where the deficit pause is placed (first half of shift)
       // For pauseAddMode: no visible markers at all
-      const isObstgaertla = adminData?.email === OBSTGAERTLA_EMAIL || (impersonateAdmin && allAdmins?.find(a => a.id === impersonateAdmin.uid)?.email === OBSTGAERTLA_EMAIL);
       const autoBreakLabel = (!isPauseAddDay && pauseDeficit > 0)
         ? (() => {
             const breakStartMin = Math.round(grossMins * 0.33);
