@@ -5,7 +5,7 @@ import { useState, useEffect, Suspense } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { CheckCircle2, AlertCircle, LogIn, LogOut, Loader2, Coffee, Moon, CalendarCheck2, ShieldX } from 'lucide-react';
+import { CheckCircle2, AlertCircle, LogIn, LogOut, Loader2, Coffee, Moon, CalendarCheck2, ShieldX, Wifi } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { 
   useFirestore, 
@@ -14,11 +14,12 @@ import {
   addDocumentNonBlocking, 
   updateDocumentNonBlocking,
   useUser,
-  useAuth
+  useAuth,
+  useDoc
 } from '@/firebase';
 import { collection, query, where, onSnapshot, doc } from 'firebase/firestore';
 import { signInAnonymously } from 'firebase/auth';
-import type { Employee, TimeEntry, ScheduleEntry } from '@/lib/store';
+import type { Employee, TimeEntry, ScheduleEntry, AdminUser } from '@/lib/store';
 import { Badge } from '@/components/ui/badge';
 import { useSearchParams } from 'next/navigation';
 import { format } from 'date-fns';
@@ -48,6 +49,7 @@ function PortalContent() {
   const [currentStatus, setCurrentStatus] = useState<'present' | 'pause' | 'absent'>('absent');
   const [isStatusLoading, setIsStatusLoading] = useState(false);
   const [isExitDialogOpen, setIsExitDialogOpen] = useState(false);
+  const [locationBlocked, setLocationBlocked] = useState(false);
 
   // Today's date string for schedule lookup
   const todayStr = format(new Date(), 'yyyy-MM-dd');
@@ -111,6 +113,14 @@ function PortalContent() {
   // Allow clock-in if: feature not active OR employee is in today's schedule
   const isScheduledToday = !scheduleFeatureActive || !!selectedEmployeeSchedule;
 
+  // Load admin settings to check location lock
+  const adminDocQuery = useMemoFirebase(() => {
+    if (!firestore || !adminId || !user) return null;
+    return doc(firestore, 'adminUsers', adminId);
+  }, [firestore, adminId, user]);
+
+  const { data: adminData } = useDoc<AdminUser>(adminDocQuery);
+
   useEffect(() => {
     if (!selectedId || !firestore || !adminId || !user) {
       setActiveEntryId(null);
@@ -149,7 +159,7 @@ function PortalContent() {
     return () => unsubscribe();
   }, [selectedId, firestore, adminId, user]);
 
-  const handleClockAction = (action: 'IN' | 'OUT', exitType?: 'PAUSE' | 'END') => {
+  const handleClockAction = async (action: 'IN' | 'OUT', exitType?: 'PAUSE' | 'END') => {
     if (!selectedId || !firestore || !adminId) return;
 
     // Schedule enforcement: block clock-in if not scheduled today
@@ -168,6 +178,33 @@ function PortalContent() {
     if (!employee) {
       setIsProcessing(false);
       return;
+    }
+
+    // Location lock enforcement
+    if (adminData?.locationLockEnabled && adminData?.locationIp) {
+      try {
+        const res = await fetch('/api/get-ip');
+        const data = await res.json();
+        if (data.ip !== adminData.locationIp) {
+          toast({
+            title: "Standort nicht erkannt",
+            description: "Stempeln ist nur aus dem Firmen-WLAN möglich. Bitte verbinden Sie sich mit dem WLAN Ihres Betriebes.",
+            variant: "destructive"
+          });
+          setIsProcessing(false);
+          setLocationBlocked(true);
+          return;
+        }
+        setLocationBlocked(false);
+      } catch {
+        toast({
+          title: "Fehler",
+          description: "Standort-Prüfung fehlgeschlagen. Bitte versuchen Sie es erneut.",
+          variant: "destructive"
+        });
+        setIsProcessing(false);
+        return;
+      }
     }
 
     if (action === 'IN') {
@@ -343,6 +380,17 @@ function PortalContent() {
               <p className="text-sm text-muted-foreground">
                 Sie stehen heute (<strong>{format(new Date(), 'dd.MM.yyyy', { locale: de })}</strong>) nicht im Dienstplan.
                 Bitte wenden Sie sich an Ihren Vorgesetzten.
+              </p>
+            </div>
+          )}
+
+          {/* Location lock blocked indicator */}
+          {locationBlocked && adminData?.locationLockEnabled && (
+            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5 text-center space-y-2">
+              <Wifi className="w-10 h-10 text-amber-600 mx-auto" />
+              <p className="font-bold text-amber-800">Standort nicht erkannt</p>
+              <p className="text-sm text-muted-foreground">
+                Stempeln ist nur aus dem Firmen-WLAN möglich. Bitte verbinden Sie sich mit dem WLAN Ihres Betriebes.
               </p>
             </div>
           )}

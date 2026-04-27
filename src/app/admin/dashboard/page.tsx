@@ -117,7 +117,10 @@ import {
   MessageCircle,
   QrCode,
   CalendarClock,
-  UtensilsCrossed
+  UtensilsCrossed,
+  Wifi,
+  MapPin,
+  ShieldCheck
 } from 'lucide-react';
 import { 
   startOfWeek, 
@@ -378,6 +381,9 @@ function DashboardContent() {
 
   // QR Code State
   const [qrCodeEmployee, setQrCodeEmployee] = useState<Employee | null>(null);
+
+  // Location Lock State
+  const [isLocationSaving, setIsLocationSaving] = useState(false);
 
   const isSuperAdmin = user?.email === 'perschkramon@gmail.com';
   const [impersonateAdmin, setImpersonateAdmin] = useState<{uid: string, email: string} | null>(null);
@@ -1962,6 +1968,122 @@ function DashboardContent() {
                       )}
                     </TableBody>
                   </Table>
+                </CardContent>
+              </Card>
+
+              {/* ── Standort-Sperre (Location Lock) ── */}
+              <Card className="border-none shadow-xl rounded-2xl overflow-hidden bg-white/90">
+                <CardHeader className="bg-white pb-4 border-b">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-emerald-100 rounded-xl">
+                      <Wifi className="w-5 h-5 text-emerald-600" />
+                    </div>
+                    <div>
+                      <CardTitle className="text-lg">Standort-Sperre</CardTitle>
+                      <CardDescription>Stempeln nur aus dem Firmen-WLAN erlauben</CardDescription>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="p-6 space-y-6">
+                  {/* Enable/Disable Toggle */}
+                  <div className="flex items-center justify-between p-4 bg-muted/30 rounded-2xl">
+                    <div className="flex items-center gap-3">
+                      <ShieldCheck className="w-5 h-5 text-primary" />
+                      <div>
+                        <p className="font-bold text-sm">Standort-Prüfung aktivieren</p>
+                        <p className="text-xs text-muted-foreground">Mitarbeiter können nur vor Ort stempeln</p>
+                      </div>
+                    </div>
+                    <Switch
+                      id="location-lock"
+                      checked={adminData?.locationLockEnabled === true}
+                      onCheckedChange={(checked) => {
+                        if (!firestore || !activeAdminUid || impersonateAdmin) return;
+                        updateDocumentNonBlocking(doc(firestore, 'adminUsers', activeAdminUid), {
+                          locationLockEnabled: checked,
+                        });
+                        toast({
+                          title: checked ? 'Standort-Sperre aktiviert' : 'Standort-Sperre deaktiviert',
+                          description: checked
+                            ? 'Mitarbeiter können nur noch aus dem Firmen-Netzwerk stempeln.'
+                            : 'Stempeln ist jetzt von überall möglich.',
+                        });
+                      }}
+                    />
+                  </div>
+
+                  {/* Save IP Button + Current Status */}
+                  <div className="space-y-4">
+                    <div className={`p-5 rounded-2xl border-2 transition-all ${
+                      adminData?.locationIp
+                        ? 'border-emerald-200 bg-emerald-50/50'
+                        : 'border-dashed border-muted-foreground/20 bg-muted/10'
+                    }`}>
+                      <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                        <div className="flex items-center gap-3 text-center sm:text-left">
+                          <div className={`p-2.5 rounded-xl shrink-0 ${
+                            adminData?.locationIp ? 'bg-emerald-100' : 'bg-muted'
+                          }`}>
+                            <MapPin className={`w-5 h-5 ${
+                              adminData?.locationIp ? 'text-emerald-600' : 'text-muted-foreground'
+                            }`} />
+                          </div>
+                          <div>
+                            {adminData?.locationIp ? (
+                              <>
+                                <p className="font-bold text-sm text-emerald-800">Firmen-IP gespeichert</p>
+                                <p className="text-xs text-emerald-600 font-mono">{adminData.locationIp}</p>
+                              </>
+                            ) : (
+                              <>
+                                <p className="font-bold text-sm">Keine Firmen-IP hinterlegt</p>
+                                <p className="text-xs text-muted-foreground">Verbinden Sie sich mit dem Firmen-WLAN und klicken Sie auf den Button.</p>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                        <Button
+                          variant={adminData?.locationIp ? 'outline' : 'default'}
+                          className="rounded-xl gap-2 shrink-0 h-11 px-5"
+                          disabled={isLocationSaving || !!impersonateAdmin}
+                          onClick={async () => {
+                            if (!firestore || !activeAdminUid) return;
+                            setIsLocationSaving(true);
+                            try {
+                              const res = await fetch('/api/get-ip');
+                              const data = await res.json();
+                              if (!data.ip || data.ip === 'unknown') {
+                                toast({ title: 'Fehler', description: 'IP-Adresse konnte nicht ermittelt werden.', variant: 'destructive' });
+                                return;
+                              }
+                              await updateDocumentNonBlocking(doc(firestore, 'adminUsers', activeAdminUid), {
+                                locationIp: data.ip,
+                              });
+                              toast({
+                                title: 'Firmen-IP gespeichert',
+                                description: `Die IP ${data.ip} wurde als Standort hinterlegt.`,
+                              });
+                            } catch (err) {
+                              toast({ title: 'Fehler', description: 'IP konnte nicht gespeichert werden.', variant: 'destructive' });
+                            } finally {
+                              setIsLocationSaving(false);
+                            }
+                          }}
+                        >
+                          {isLocationSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wifi className="w-4 h-4" />}
+                          {adminData?.locationIp ? 'IP aktualisieren' : 'Aktuelle IP speichern'}
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* Info hint */}
+                    <div className="flex items-start gap-3 text-xs text-muted-foreground bg-blue-50 border border-blue-100 p-4 rounded-2xl">
+                      <ShieldAlert className="w-4 h-4 text-blue-500 mt-0.5 shrink-0" />
+                      <p>
+                        <strong className="text-blue-700">So funktioniert es:</strong> Stellen Sie sicher, dass Sie gerade mit dem WLAN Ihres Betriebes verbunden sind, und klicken Sie auf &quot;{adminData?.locationIp ? 'IP aktualisieren' : 'Aktuelle IP speichern'}&quot;. Danach können Mitarbeiter nur stempeln, wenn sie im selben Netzwerk sind.
+                      </p>
+                    </div>
+                  </div>
                 </CardContent>
               </Card>
             </TabsContent>

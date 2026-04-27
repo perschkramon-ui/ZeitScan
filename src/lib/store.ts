@@ -49,6 +49,10 @@ export type AdminUser = {
   createdAt: string;
   /** If true, missing break times are automatically added per §4 ArbZG */
   autoBreakDeduction?: boolean;
+  /** If true, employees can only clock in/out from the office network */
+  locationLockEnabled?: boolean;
+  /** The public IP of the office network (saved by admin) */
+  locationIp?: string;
 };
 
 export type ScheduleEntry = {

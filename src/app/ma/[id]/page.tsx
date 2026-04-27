@@ -18,7 +18,7 @@ import {
 } from '@/firebase';
 import { collection, query, where, onSnapshot, doc, getDoc } from 'firebase/firestore';
 import { signInAnonymously } from 'firebase/auth';
-import type { Employee, TimeEntry, ScheduleEntry } from '@/lib/store';
+import type { Employee, TimeEntry, ScheduleEntry, AdminUser } from '@/lib/store';
 import { format, startOfMonth, parseISO, isSameDay, addDays, differenceInMinutes, startOfDay, endOfDay } from 'date-fns';
 import { de } from 'date-fns/locale';
 import { 
@@ -39,7 +39,8 @@ import {
   History,
   ChevronDown,
   ChevronUp,
-  CalendarDays
+  CalendarDays,
+  Wifi
 } from 'lucide-react';
 import {
   Dialog,
@@ -63,6 +64,7 @@ function MAAppContent({ id }: { id: string }) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isExitDialogOpen, setIsExitDialogOpen] = useState(false);
   const [success, setSuccess] = useState<string | null>(null);
+  const [locationBlocked, setLocationBlocked] = useState(false);
 
   const [timeEntriesMonth, setTimeEntriesMonth] = useState<TimeEntry[]>([]);
   const [allTimeEntries, setAllTimeEntries] = useState<TimeEntry[]>([]);
@@ -85,6 +87,9 @@ function MAAppContent({ id }: { id: string }) {
 
   // ── History Expansion ──
   const [showAllHistory, setShowAllHistory] = useState(false);
+
+  // Admin settings for location lock
+  const [adminSettings, setAdminSettings] = useState<AdminUser | null>(null);
 
   // 1. Auto-login anonymously
   useEffect(() => {
@@ -115,6 +120,23 @@ function MAAppContent({ id }: { id: string }) {
     };
     fetchEmployee();
   }, [firestore, id]);
+
+  // 2b. Fetch Admin Settings (for location lock)
+  useEffect(() => {
+    if (!firestore || !employee) return;
+    const fetchAdmin = async () => {
+      try {
+        const adminRef = doc(firestore, 'adminUsers', employee.adminId);
+        const adminSnap = await getDoc(adminRef);
+        if (adminSnap.exists()) {
+          setAdminSettings({ id: adminSnap.id, ...adminSnap.data() } as AdminUser);
+        }
+      } catch (e) {
+        console.error('Failed to load admin settings:', e);
+      }
+    };
+    fetchAdmin();
+  }, [firestore, employee]);
 
   // 3. Listen to Time Entries (Status & Dashboard)
   useEffect(() => {
@@ -193,9 +215,36 @@ function MAAppContent({ id }: { id: string }) {
       .sort((a, b) => b.clockInTime.localeCompare(a.clockInTime));
   }, [allTimeEntries]);
 
-  const handleClockAction = (action: 'IN' | 'OUT', exitType?: 'PAUSE' | 'END') => {
+  const handleClockAction = async (action: 'IN' | 'OUT', exitType?: 'PAUSE' | 'END') => {
     if (!employee || !firestore) return;
     setIsProcessing(true);
+
+    // Location lock enforcement
+    if (adminSettings?.locationLockEnabled && adminSettings?.locationIp) {
+      try {
+        const res = await fetch('/api/get-ip');
+        const data = await res.json();
+        if (data.ip !== adminSettings.locationIp) {
+          toast({
+            title: "Standort nicht erkannt",
+            description: "Stempeln ist nur aus dem Firmen-WLAN möglich. Bitte verbinde dich mit dem WLAN deines Betriebes.",
+            variant: "destructive"
+          });
+          setIsProcessing(false);
+          setLocationBlocked(true);
+          return;
+        }
+        setLocationBlocked(false);
+      } catch {
+        toast({
+          title: "Fehler",
+          description: "Standort-Prüfung fehlgeschlagen. Bitte versuche es erneut.",
+          variant: "destructive"
+        });
+        setIsProcessing(false);
+        return;
+      }
+    }
 
     if (action === 'IN') {
       const entryData = {
@@ -454,6 +503,16 @@ function MAAppContent({ id }: { id: string }) {
         {/* Actions Menu */}
         <Card className="rounded-3xl shadow-lg border-none overflow-hidden bg-white/95 backdrop-blur-xl">
           <CardContent className="p-4 space-y-3">
+            {/* Location lock warning */}
+            {locationBlocked && adminSettings?.locationLockEnabled && (
+              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-center space-y-1">
+                <Wifi className="w-8 h-8 text-amber-600 mx-auto" />
+                <p className="font-bold text-amber-800 text-sm">Standort nicht erkannt</p>
+                <p className="text-xs text-muted-foreground">
+                  Stempeln ist nur aus dem Firmen-WLAN möglich.
+                </p>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-3">
               <Button 
                 onClick={() => handleClockAction('IN')}
