@@ -3,26 +3,26 @@
 import { useState, useMemo, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import { QRCodeSVG } from 'qrcode.react';
-import { 
-  Table, 
-  TableBody, 
-  TableCell, 
-  TableHead, 
-  TableHeader, 
-  TableRow 
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow
 } from '@/components/ui/table';
-import { 
-  Card, 
-  CardHeader, 
-  CardTitle, 
-  CardDescription, 
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
   CardContent,
   CardFooter
 } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { 
+import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -32,10 +32,10 @@ import {
   DialogFooter
 } from "@/components/ui/dialog";
 import {
-  Tabs, 
-  TabsContent, 
-  TabsList, 
-  TabsTrigger 
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger
 } from "@/components/ui/tabs";
 import {
   Select,
@@ -72,8 +72,8 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { 
-  Search, 
+import {
+  Search,
   UserPlus,
   Loader2,
   Users,
@@ -122,16 +122,16 @@ import {
   MapPin,
   ShieldCheck
 } from 'lucide-react';
-import { 
-  startOfWeek, 
-  startOfMonth, 
+import {
+  startOfWeek,
+  startOfMonth,
   startOfYear,
   endOfMonth,
   endOfYear,
-  isAfter, 
+  isAfter,
   isBefore,
-  parseISO, 
-  differenceInMinutes, 
+  parseISO,
+  differenceInMinutes,
   differenceInDays,
   format,
   isSameDay,
@@ -141,14 +141,14 @@ import {
   setYear
 } from 'date-fns';
 import { de } from 'date-fns/locale';
-import { 
-  useFirestore, 
-  useCollection, 
-  useMemoFirebase, 
-  addDocumentNonBlocking, 
-  deleteDocumentNonBlocking, 
-  useUser, 
-  useDoc, 
+import {
+  useFirestore,
+  useCollection,
+  useMemoFirebase,
+  addDocumentNonBlocking,
+  deleteDocumentNonBlocking,
+  useUser,
+  useDoc,
   setDocumentNonBlocking,
   updateDocumentNonBlocking,
   useAuth
@@ -174,7 +174,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   const { user, isUserLoading, userError } = useUser();
   const auth = useAuth();
   const { toast } = useToast();
-  
+
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -183,8 +183,8 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   const handleAuth = (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    
-    const authPromise = isLogin 
+
+    const authPromise = isLogin
       ? signInWithEmailAndPassword(auth, email.trim(), password)
       : createUserWithEmailAndPassword(auth, email.trim(), password);
 
@@ -237,9 +237,9 @@ function AuthGate({ children }: { children: React.ReactNode }) {
               <label className="text-sm font-medium">E-Mail</label>
               <div className="relative">
                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <Input 
-                  type="email" 
-                  placeholder="name@firma.de" 
+                <Input
+                  type="email"
+                  placeholder="name@firma.de"
                   className="pl-10 rounded-xl"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
@@ -251,9 +251,9 @@ function AuthGate({ children }: { children: React.ReactNode }) {
               <label className="text-sm font-medium">Passwort</label>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <Input 
-                  type="password" 
-                  placeholder="••••••••" 
+                <Input
+                  type="password"
+                  placeholder="••••••••"
                   className="pl-10 rounded-xl"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -282,7 +282,7 @@ function DashboardContent() {
   const [period, setPeriod] = useState<'weekly' | 'monthly'>('monthly');
   const [isCheckoutLoading, setIsCheckoutLoading] = useState(false);
   const [isLogoutLoading, setIsLogoutLoading] = useState(false);
-  
+
   const { toast } = useToast();
   const firestore = useFirestore();
   const { user } = useUser();
@@ -386,7 +386,7 @@ function DashboardContent() {
   const [isLocationSaving, setIsLocationSaving] = useState(false);
 
   const isSuperAdmin = user?.email === 'perschkramon@gmail.com';
-  const [impersonateAdmin, setImpersonateAdmin] = useState<{uid: string, email: string} | null>(null);
+  const [impersonateAdmin, setImpersonateAdmin] = useState<{ uid: string, email: string } | null>(null);
   const [isSupportDialogOpen, setIsSupportDialogOpen] = useState(false);
   const activeAdminUid = impersonateAdmin?.uid || user?.uid;
 
@@ -394,7 +394,7 @@ function DashboardContent() {
     if (!firestore || !activeAdminUid) return null;
     return doc(firestore, 'adminUsers', activeAdminUid);
   }, [firestore, activeAdminUid]);
-  
+
   const { data: adminData, isLoading: isAdminLoading } = useDoc<AdminUser>(adminDocQuery);
 
   // Neuer Benutzer: automatisch 30-Tage-Trial starten
@@ -473,8 +473,8 @@ function DashboardContent() {
 
     timeEntries.forEach(entry => {
       if (entry.entryType && entry.entryType !== 'WORK') return;
-      const dayEntries = timeEntries.filter(e => 
-        e.employeeId === entry.employeeId && 
+      const dayEntries = timeEntries.filter(e =>
+        e.employeeId === entry.employeeId &&
         (!e.entryType || e.entryType === 'WORK') &&
         isSameDay(parseISO(e.clockInTime), parseISO(entry.clockInTime))
       );
@@ -495,10 +495,10 @@ function DashboardContent() {
       const activeEntry = timeEntries.find(e => {
         if (e.employeeId !== emp.id) return false;
         if (e.entryType !== 'SICK' && e.entryType !== 'VACATION') return false;
-        
+
         const start = startOfDay(parseISO(e.clockInTime));
         const end = e.clockOutTime ? endOfDay(parseISO(e.clockOutTime)) : start;
-        
+
         return (now >= start && now <= end);
       });
       if (activeEntry) map.set(emp.id, activeEntry);
@@ -520,9 +520,9 @@ function DashboardContent() {
       const empEntries = timeEntries
         .filter(e => e.employeeId === emp.id && (!e.entryType || e.entryType === 'WORK'))
         .sort((a, b) => b.clockInTime.localeCompare(a.clockInTime));
-      
+
       const lastEntry = empEntries[0];
-      
+
       if (!lastEntry) {
         map.set(emp.id, 'absent');
       } else if (!lastEntry.clockOutTime) {
@@ -860,14 +860,14 @@ function DashboardContent() {
       // For pauseAddMode: no visible markers at all
       const autoBreakLabel = (!isPauseAddDay && pauseDeficit > 0)
         ? (() => {
-            const breakStartMin = Math.round(grossMins * 0.33);
-            const bs = new Date(firstIn.getTime() + breakStartMin * 60000);
-            const be = new Date(bs.getTime() + pauseDeficit * 60000);
-            // Obstgärtla: keine "auto"/"§4 ArbZG" Marker — Pause sieht normal aus
-            return isObstgaertla
-              ? format(bs, 'HH:mm') + '–' + format(be, 'HH:mm')
-              : format(bs, 'HH:mm') + '–' + format(be, 'HH:mm') + ' (+' + pauseDeficit + 'min §4 ArbZG)';
-          })()
+          const breakStartMin = Math.round(grossMins * 0.33);
+          const bs = new Date(firstIn.getTime() + breakStartMin * 60000);
+          const be = new Date(bs.getTime() + pauseDeficit * 60000);
+          // Obstgärtla: keine "auto"/"§4 ArbZG" Marker — Pause sieht normal aus
+          return isObstgaertla
+            ? format(bs, 'HH:mm') + '–' + format(be, 'HH:mm')
+            : format(bs, 'HH:mm') + '–' + format(be, 'HH:mm') + ' (+' + pauseDeficit + 'min §4 ArbZG)';
+        })()
         : null;
 
       // For pauseAddMode: place break visually in first half, no auto-marker
@@ -977,7 +977,7 @@ function DashboardContent() {
 
       const periodLabel =
         filter === 'all' ? 'Gesamte Historie' :
-        `${format(startDate, 'dd.MM.yyyy')} - ${format(endDate, 'dd.MM.yyyy')}`;
+          `${format(startDate, 'dd.MM.yyyy')} - ${format(endDate, 'dd.MM.yyyy')}`;
 
       let csv = `ZeitScan Gesamtexport\n`;
       csv += `Zeitraum: ${periodLabel}\n`;
@@ -1193,17 +1193,17 @@ function DashboardContent() {
 
     const currentVacation = editingEmployee.vacationDays || 0;
     const currentSick = editingEmployee.sickDays || 0;
-    
+
     updateDocumentNonBlocking(doc(firestore, 'employees', editingEmployee.id), {
       vacationDays: absenceType === 'VACATION' ? Math.max(0, currentVacation - numDays) : currentVacation,
       sickDays: absenceType === 'SICK' ? currentSick + numDays : currentSick,
     });
 
-    toast({ 
-      title: "Buchung erfolgreich", 
-      description: `${numDays} Tage (${absenceType === 'VACATION' ? 'Urlaub' : 'Krankheit'}) gebucht.` 
+    toast({
+      title: "Buchung erfolgreich",
+      description: `${numDays} Tage (${absenceType === 'VACATION' ? 'Urlaub' : 'Krankheit'}) gebucht.`
     });
-    
+
     setAbsenceStart(format(new Date(), 'yyyy-MM-dd'));
     setAbsenceEnd(format(new Date(), 'yyyy-MM-dd'));
   };
@@ -1222,7 +1222,7 @@ function DashboardContent() {
   const handleAddSingleAbsence = () => {
     if (!viewingLogsEmployee || !firestore || !user) return;
     const date = startOfDay(parseISO(logAbsenceDate));
-    
+
     addDocumentNonBlocking(collection(firestore, 'timeEntries'), {
       adminId: activeAdminUid,
       employeeId: viewingLogsEmployee.id,
@@ -1242,9 +1242,9 @@ function DashboardContent() {
       sickDays: logAbsenceType === 'SICK' ? currentSick + 1 : currentSick,
     });
 
-    toast({ 
-      title: logAbsenceType === 'VACATION' ? "Urlaub gebucht" : "Krankheit gebucht", 
-      description: `Eintrag für den ${format(date, 'dd.MM.yyyy')} erstellt und Konto aktualisiert.` 
+    toast({
+      title: logAbsenceType === 'VACATION' ? "Urlaub gebucht" : "Krankheit gebucht",
+      description: `Eintrag für den ${format(date, 'dd.MM.yyyy')} erstellt und Konto aktualisiert.`
     });
     setIsAbsenceDialogOpen(false);
   };
@@ -1294,7 +1294,7 @@ function DashboardContent() {
 
   const handleDeleteAllData = () => {
     if (!firestore || !activeAdminUid || !employees || !timeEntries) return;
-    
+
     timeEntries.forEach(entry => {
       deleteDocumentNonBlocking(doc(firestore, 'timeEntries', entry.id));
     });
@@ -1306,7 +1306,7 @@ function DashboardContent() {
         deleteDocumentNonBlocking(doc(firestore, 'schedules', sched.id));
       });
     }
-    
+
     toast({
       title: "Daten gelöscht",
       description: "Alle Mitarbeiter und Zeitprotokolle wurden entfernt."
@@ -1434,9 +1434,9 @@ function DashboardContent() {
 
     if (method === 'copy') {
       navigator.clipboard.writeText(url);
-      toast({ 
-        title: "Link kopiert", 
-        description: "App-Link wurde in die Zwischenablage kopiert." 
+      toast({
+        title: "Link kopiert",
+        description: "App-Link wurde in die Zwischenablage kopiert."
       });
     } else if (method === 'whatsapp') {
       window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
@@ -1456,10 +1456,10 @@ function DashboardContent() {
               </Link>
               <div className="flex gap-2 items-center">
                 {isSuperAdmin && (
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    onClick={() => setIsSupportDialogOpen(true)} 
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setIsSupportDialogOpen(true)}
                     className={impersonateAdmin ? "bg-amber-100 border-amber-300 text-amber-800 hover:bg-amber-200" : "bg-purple-100 border-purple-300 text-purple-800 hover:bg-purple-200"}
                   >
                     <ShieldAlert className="w-4 h-4 mr-2" />
@@ -1481,7 +1481,7 @@ function DashboardContent() {
                 )}
               </div>
             </div>
-            
+
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div className="flex items-center gap-4">
                 <div className="p-3 bg-white rounded-2xl shadow-sm">
@@ -1509,20 +1509,20 @@ function DashboardContent() {
                       Aktuelles Jahr
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
-                    <DropdownMenuItem 
+                    <DropdownMenuItem
                       onSelect={(e) => {
                         e.preventDefault();
                         setTimeout(() => setIsCustomExportOpen(true), 150);
-                      }} 
+                      }}
                       className="gap-2"
                     >
                       <CalendarDays className="w-4 h-4" /> Bestimmten Monat wählen...
                     </DropdownMenuItem>
-                    <DropdownMenuItem 
+                    <DropdownMenuItem
                       onSelect={(e) => {
                         e.preventDefault();
                         setTimeout(() => setIsCustomYearExportOpen(true), 150);
-                      }} 
+                      }}
                       className="gap-2"
                     >
                       <FileText className="w-4 h-4" /> Jahresbericht wählen...
@@ -1599,8 +1599,8 @@ function DashboardContent() {
                     </h3>
                     <p className="text-sm text-muted-foreground">Nach Ablauf der Testphase werden Premium-Funktionen deaktiviert. Abonnieren Sie jetzt, um den Übergang nahtlos zu gestalten.</p>
                   </div>
-                  <Button 
-                    onClick={handleSubscribe} 
+                  <Button
+                    onClick={handleSubscribe}
                     disabled={isCheckoutLoading}
                     className="bg-green-600 hover:bg-green-700 text-white rounded-xl shadow-lg shrink-0 gap-2"
                   >
@@ -1619,8 +1619,8 @@ function DashboardContent() {
                     </h3>
                     <p className="text-sm text-muted-foreground">Ihre Testphase ist beendet. Premium-Funktionen sind deaktiviert. Starten Sie Ihr Abo, um fortzufahren.</p>
                   </div>
-                  <Button 
-                    onClick={handleSubscribe} 
+                  <Button
+                    onClick={handleSubscribe}
                     disabled={isCheckoutLoading}
                     className="bg-green-600 hover:bg-green-700 text-white rounded-xl shadow-lg shrink-0 gap-2"
                   >
@@ -1647,731 +1647,809 @@ function DashboardContent() {
                 <p className="text-muted-foreground text-lg max-w-md mx-auto">
                   Sichern Sie sich jetzt unbegrenzten Zugriff auf alle Premium-Funktionen, das Mitarbeiter-Terminal und Ihre erfassten Daten, indem Sie auf den ZeitScan Pro-Plan upgraden.
                 </p>
-                
-                <Button 
-                  size="lg" 
-                  onClick={handleSubscribe} 
-                  disabled={isCheckoutLoading} 
+
+                <Button
+                  size="lg"
+                  onClick={handleSubscribe}
+                  disabled={isCheckoutLoading}
                   className="rounded-full w-full max-w-sm h-16 text-lg font-bold shadow-xl hover:shadow-2xl transition-all border-4 border-green-100 bg-green-600 hover:bg-green-700 hover:scale-105 mx-auto flex"
                 >
                   {isCheckoutLoading ? <Loader2 className="w-6 h-6 animate-spin mr-2" /> : <CreditCard className="w-6 h-6 mr-2" />}
                   Pro Plan abonnieren
                   <ArrowRight className="w-5 h-5 ml-2" />
                 </Button>
-                
+
                 <p className="text-sm text-muted-foreground pt-4">
                   Sichere Bezahlung über Stripe.
                 </p>
               </CardContent>
             </Card>
           ) : (
-          <Tabs defaultValue="personal" className="space-y-8">
-            <TabsList className="bg-white/50 p-1.5 rounded-2xl h-14 shadow-sm border-none">
-              <TabsTrigger value="personal" className="rounded-xl px-6 h-full data-[state=active]:bg-white data-[state=active]:shadow-md">
-                <Users className="w-4 h-4 mr-2" /> Personal
-              </TabsTrigger>
-              <TabsTrigger value="schedule" className="rounded-xl px-6 h-full data-[state=active]:bg-white data-[state=active]:shadow-md">
-                <CalendarCheck2 className="w-4 h-4 mr-2" /> Dienstplan
-              </TabsTrigger>
-              <TabsTrigger value="billing" className="rounded-xl px-6 h-full data-[state=active]:bg-white data-[state=active]:shadow-md">
-                <CreditCard className="w-4 h-4 mr-2" /> Abo & Abrechnung
-              </TabsTrigger>
-            </TabsList>
+            <Tabs defaultValue="personal" className="space-y-8">
+              <TabsList className="bg-white/50 p-1.5 rounded-2xl h-14 shadow-sm border-none">
+                <TabsTrigger value="personal" className="rounded-xl px-6 h-full data-[state=active]:bg-white data-[state=active]:shadow-md">
+                  <Users className="w-4 h-4 mr-2" /> Personal
+                </TabsTrigger>
+                <TabsTrigger value="schedule" className="rounded-xl px-6 h-full data-[state=active]:bg-white data-[state=active]:shadow-md">
+                  <CalendarCheck2 className="w-4 h-4 mr-2" /> Dienstplan
+                </TabsTrigger>
+                <TabsTrigger value="billing" className="rounded-xl px-6 h-full data-[state=active]:bg-white data-[state=active]:shadow-md">
+                  <CreditCard className="w-4 h-4 mr-2" /> Abo & Abrechnung
+                </TabsTrigger>
+              </TabsList>
 
-            <TabsContent value="personal" className="mt-0 space-y-8">
-              <Card className="border-none shadow-xl rounded-2xl overflow-hidden bg-white/90">
-                <CardHeader className="bg-white pb-6 border-b">
-                  <div className="flex flex-wrap items-center justify-between gap-4">
-                    <div className="flex items-center gap-4 flex-1">
-                      <div className="relative flex-1 max-w-sm">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                        <Input placeholder="Personal suchen..." className="pl-10 rounded-xl" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+              <TabsContent value="personal" className="mt-0 space-y-8">
+                <Card className="border-none shadow-xl rounded-2xl overflow-hidden bg-white/90">
+                  <CardHeader className="bg-white pb-6 border-b">
+                    <div className="flex flex-wrap items-center justify-between gap-4">
+                      <div className="flex items-center gap-4 flex-1">
+                        <div className="relative flex-1 max-w-sm">
+                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                          <Input placeholder="Personal suchen..." className="pl-10 rounded-xl" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+                        </div>
+                        <div className="flex items-center bg-muted/50 p-1 rounded-xl">
+                          <Button variant={period === 'weekly' ? 'secondary' : 'ghost'} size="sm" className="rounded-lg h-8" onClick={() => setPeriod('weekly')}>Wöchentlich</Button>
+                          <Button variant={period === 'monthly' ? 'secondary' : 'ghost'} size="sm" className="rounded-lg h-8" onClick={() => setPeriod('monthly')}>Monatlich</Button>
+                        </div>
                       </div>
-                      <div className="flex items-center bg-muted/50 p-1 rounded-xl">
-                        <Button variant={period === 'weekly' ? 'secondary' : 'ghost'} size="sm" className="rounded-lg h-8" onClick={() => setPeriod('weekly')}>Wöchentlich</Button>
-                        <Button variant={period === 'monthly' ? 'secondary' : 'ghost'} size="sm" className="rounded-lg h-8" onClick={() => setPeriod('monthly')}>Monatlich</Button>
+                      <div className="flex items-center space-x-2">
+                        <Switch id="show-archived" checked={showArchived} onCheckedChange={setShowArchived} />
+                        <Label htmlFor="show-archived">Archivierte anzeigen</Label>
                       </div>
                     </div>
-                    <div className="flex items-center space-x-2">
-                      <Switch id="show-archived" checked={showArchived} onCheckedChange={setShowArchived} />
-                      <Label htmlFor="show-archived">Archivierte anzeigen</Label>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="p-0">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Name</TableHead>
-                        <TableHead>Ist ({period === 'weekly' ? 'Woche' : 'Monat'})</TableHead>
-                        <TableHead>Soll</TableHead>
-                        <TableHead>Zeitkonto</TableHead>
-                        <TableHead>Resturlaub</TableHead>
-                        <TableHead>Krank</TableHead>
-                        <TableHead className="text-right">Aktionen</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {employeesLoading ? (
-                        <TableRow><TableCell colSpan={8} className="h-48 text-center"><Loader2 className="w-8 h-8 animate-spin mx-auto text-muted-foreground" /></TableCell></TableRow>
-                      ) : filteredEmployees.length > 0 ? (
-                        filteredEmployees.map((emp) => {
-                          const status = statusMap.get(emp.id) || 'absent';
-                          const workedHours = workedHoursMap.get(emp.id) || 0;
-                          const hasAnomaly = anomaliesMap.get(emp.id);
-                          const activeAbsence = activeAbsenceMap.get(emp.id);
-                          
-                          return (
-                            <TableRow key={emp.id} className={`group hover:bg-primary/5 ${emp.isArchived ? 'opacity-60 bg-muted/20' : ''}`}>
-                              <TableCell>
-                                {emp.isArchived ? (
-                                  <Badge variant="outline">Archiviert</Badge>
-                                ) : status === 'present' ? (
-                                  <Badge className="bg-green-500/10 text-green-600 border-green-200 gap-1.5">
-                                    <Circle className="w-2 h-2 fill-current animate-pulse" /> Anwesend
-                                  </Badge>
-                                ) : status === 'pause' ? (
-                                  <Badge className="bg-amber-100 text-amber-700 border-amber-200 gap-1.5">
-                                    <Coffee className="w-3 h-3" /> Pause
-                                  </Badge>
-                                ) : (status === 'sick' || status === 'vacation') ? (
-                                  <div className="flex flex-col gap-1">
-                                    <Badge className={status === 'sick' ? "bg-orange-100 text-orange-700 border-orange-200 gap-1.5" : "bg-blue-100 text-blue-700 border-blue-200 gap-1.5"}>
-                                      {status === 'sick' ? <Stethoscope className="w-3 h-3" /> : <Palmtree className="w-3 h-3" />}
-                                      {status === 'sick' ? 'Krank' : 'Urlaub'}
+                  </CardHeader>
+                  <CardContent className="p-0">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Name</TableHead>
+                          <TableHead>Ist ({period === 'weekly' ? 'Woche' : 'Monat'})</TableHead>
+                          <TableHead>Soll</TableHead>
+                          <TableHead>Zeitkonto</TableHead>
+                          <TableHead>Resturlaub</TableHead>
+                          <TableHead>Krank</TableHead>
+                          <TableHead className="text-right">Aktionen</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {employeesLoading ? (
+                          <TableRow><TableCell colSpan={8} className="h-48 text-center"><Loader2 className="w-8 h-8 animate-spin mx-auto text-muted-foreground" /></TableCell></TableRow>
+                        ) : filteredEmployees.length > 0 ? (
+                          filteredEmployees.map((emp) => {
+                            const status = statusMap.get(emp.id) || 'absent';
+                            const workedHours = workedHoursMap.get(emp.id) || 0;
+                            const hasAnomaly = anomaliesMap.get(emp.id);
+                            const activeAbsence = activeAbsenceMap.get(emp.id);
+
+                            return (
+                              <TableRow key={emp.id} className={`group hover:bg-primary/5 ${emp.isArchived ? 'opacity-60 bg-muted/20' : ''}`}>
+                                <TableCell>
+                                  {emp.isArchived ? (
+                                    <Badge variant="outline">Archiviert</Badge>
+                                  ) : status === 'present' ? (
+                                    <Badge className="bg-green-500/10 text-green-600 border-green-200 gap-1.5">
+                                      <Circle className="w-2 h-2 fill-current animate-pulse" /> Anwesend
                                     </Badge>
-                                    {activeAbsence && activeAbsence.clockOutTime && (
-                                      <span className="text-[10px] text-muted-foreground font-medium leading-tight">
-                                        {format(parseISO(activeAbsence.clockInTime), 'dd.MM.')} - {format(parseISO(activeAbsence.clockOutTime), 'dd.MM.yy')}
-                                      </span>
+                                  ) : status === 'pause' ? (
+                                    <Badge className="bg-amber-100 text-amber-700 border-amber-200 gap-1.5">
+                                      <Coffee className="w-3 h-3" /> Pause
+                                    </Badge>
+                                  ) : (status === 'sick' || status === 'vacation') ? (
+                                    <div className="flex flex-col gap-1">
+                                      <Badge className={status === 'sick' ? "bg-orange-100 text-orange-700 border-orange-200 gap-1.5" : "bg-blue-100 text-blue-700 border-blue-200 gap-1.5"}>
+                                        {status === 'sick' ? <Stethoscope className="w-3 h-3" /> : <Palmtree className="w-3 h-3" />}
+                                        {status === 'sick' ? 'Krank' : 'Urlaub'}
+                                      </Badge>
+                                      {activeAbsence && activeAbsence.clockOutTime && (
+                                        <span className="text-[10px] text-muted-foreground font-medium leading-tight">
+                                          {format(parseISO(activeAbsence.clockInTime), 'dd.MM.')} - {format(parseISO(activeAbsence.clockOutTime), 'dd.MM.yy')}
+                                        </span>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <Badge variant="outline" className="text-muted-foreground">Abwesend</Badge>
+                                  )}
+                                </TableCell>
+                                <TableCell>
+                                  <div className="flex items-center gap-2">
+                                    <button
+                                      onClick={() => setViewingLogsEmployee(emp)}
+                                      className="font-bold hover:text-primary hover:underline transition-colors text-left"
+                                    >
+                                      {emp.fullName}
+                                    </button>
+                                    {hasAnomaly && (
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <AlertTriangle
+                                            className="w-4 h-4 text-amber-500 cursor-pointer animate-bounce"
+                                            onClick={() => setViewingLogsEmployee(emp)}
+                                          />
+                                        </TooltipTrigger>
+                                        <TooltipContent>Mehrfach-Logins erkannt! Klicken zum Klären.</TooltipContent>
+                                      </Tooltip>
                                     )}
                                   </div>
-                                ) : (
-                                  <Badge variant="outline" className="text-muted-foreground">Abwesend</Badge>
-                                )}
-                              </TableCell>
-                              <TableCell>
-                                <div className="flex items-center gap-2">
-                                  <button 
-                                    onClick={() => setViewingLogsEmployee(emp)}
-                                    className="font-bold hover:text-primary hover:underline transition-colors text-left"
-                                  >
-                                    {emp.fullName}
-                                  </button>
-                                  {hasAnomaly && (
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <AlertTriangle 
-                                          className="w-4 h-4 text-amber-500 cursor-pointer animate-bounce" 
-                                          onClick={() => setViewingLogsEmployee(emp)}
-                                        />
-                                      </TooltipTrigger>
-                                      <TooltipContent>Mehrfach-Logins erkannt! Klicken zum Klären.</TooltipContent>
-                                    </Tooltip>
+                                  <div className="text-xs text-muted-foreground">{emp.position || 'Mitarbeiter'}</div>
+                                </TableCell>
+                                <TableCell>
+                                  {isFeatureActive ? (
+                                    <span className="font-mono font-medium">{workedHours.toFixed(2)}h</span>
+                                  ) : (
+                                    <LockIcon className="w-3.5 h-3.5 text-muted-foreground/30" />
                                   )}
-                                </div>
-                                <div className="text-xs text-muted-foreground">{emp.position || 'Mitarbeiter'}</div>
-                              </TableCell>
-                              <TableCell>
-                                {isFeatureActive ? (
-                                  <span className="font-mono font-medium">{workedHours.toFixed(2)}h</span>
-                                ) : (
-                                  <LockIcon className="w-3.5 h-3.5 text-muted-foreground/30" />
-                                )}
-                              </TableCell>
-                              <TableCell>
-                                <div className="text-xs font-medium">
-                                  {emp.agreedHours || 0}h / {emp.agreedHoursPeriod === 'monthly' ? 'Monat' : 'Woche'}
-                                </div>
-                              </TableCell>
-                              <TableCell>
-                                {isFeatureActive ? (
-                                  <Badge variant="outline" className={`font-mono ${ (emp.overtimeBalance || 0) < 0 ? 'text-destructive' : 'text-green-600'}`}>
-                                    {(emp.overtimeBalance || 0).toFixed(2)}h
-                                  </Badge>
-                                ) : (
-                                  <span className="text-muted-foreground/30">—</span>
-                                )}
-                              </TableCell>
-                              <TableCell>
-                                <div className="flex items-center gap-1 text-muted-foreground">
-                                  <Palmtree className="w-3.5 h-3.5" />
-                                  <span className={`text-xs font-medium ${(emp.vacationDays || 0) <= 5 ? 'text-destructive font-bold' : ''}`}>
-                                    {emp.vacationDays || 0}d
-                                  </span>
-                                </div>
-                              </TableCell>
-                              <TableCell>
-                                <div className="flex items-center gap-1 text-muted-foreground">
-                                  <Stethoscope className="w-3.5 h-3.5" />
-                                  <span className="text-xs font-medium">{emp.sickDays || 0}d</span>
-                                </div>
-                              </TableCell>
-                              <TableCell className="text-right">
-                                <div className="flex items-center justify-end gap-1">
-                                  {!emp.isArchived && status !== 'sick' && status !== 'vacation' && (
+                                </TableCell>
+                                <TableCell>
+                                  <div className="text-xs font-medium">
+                                    {emp.agreedHours || 0}h / {emp.agreedHoursPeriod === 'monthly' ? 'Monat' : 'Woche'}
+                                  </div>
+                                </TableCell>
+                                <TableCell>
+                                  {isFeatureActive ? (
+                                    <Badge variant="outline" className={`font-mono ${(emp.overtimeBalance || 0) < 0 ? 'text-destructive' : 'text-green-600'}`}>
+                                      {(emp.overtimeBalance || 0).toFixed(2)}h
+                                    </Badge>
+                                  ) : (
+                                    <span className="text-muted-foreground/30">—</span>
+                                  )}
+                                </TableCell>
+                                <TableCell>
+                                  <div className="flex items-center gap-1 text-muted-foreground">
+                                    <Palmtree className="w-3.5 h-3.5" />
+                                    <span className={`text-xs font-medium ${(emp.vacationDays || 0) <= 5 ? 'text-destructive font-bold' : ''}`}>
+                                      {emp.vacationDays || 0}d
+                                    </span>
+                                  </div>
+                                </TableCell>
+                                <TableCell>
+                                  <div className="flex items-center gap-1 text-muted-foreground">
+                                    <Stethoscope className="w-3.5 h-3.5" />
+                                    <span className="text-xs font-medium">{emp.sickDays || 0}d</span>
+                                  </div>
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  <div className="flex items-center justify-end gap-1">
+                                    {!emp.isArchived && status !== 'sick' && status !== 'vacation' && (
+                                      <DropdownMenu>
+                                        <DropdownMenuTrigger asChild>
+                                          <Button variant="ghost" size="icon" className="h-8 w-8 text-green-600" title="Stempeluhr">
+                                            <Clock className="w-4 h-4" />
+                                          </Button>
+                                        </DropdownMenuTrigger>
+                                        <DropdownMenuContent align="end">
+                                          <DropdownMenuLabel>Stempeluhr</DropdownMenuLabel>
+                                          <DropdownMenuSeparator />
+                                          {status === 'absent' && (
+                                            <DropdownMenuItem onClick={() => handleManualClockIn(emp)}>
+                                              <LogIn className="mr-2 h-4 w-4 text-green-600" />
+                                              <span>Einstempeln</span>
+                                            </DropdownMenuItem>
+                                          )}
+                                          {status === 'present' && (
+                                            <>
+                                              <DropdownMenuItem onClick={() => handleManualPause(emp)}>
+                                                <Coffee className="mr-2 h-4 w-4 text-amber-600" />
+                                                <span>Pause setzen</span>
+                                              </DropdownMenuItem>
+                                              <DropdownMenuItem onClick={() => handleManualClockOut(emp)}>
+                                                <LogOut className="mr-2 h-4 w-4 text-destructive" />
+                                                <span>Ausstempeln</span>
+                                              </DropdownMenuItem>
+                                            </>
+                                          )}
+                                          {status === 'pause' && (
+                                            <>
+                                              <DropdownMenuItem onClick={() => handleManualClockIn(emp)}>
+                                                <Play className="mr-2 h-4 w-4 text-green-600" />
+                                                <span>Pause beenden</span>
+                                              </DropdownMenuItem>
+                                              <DropdownMenuItem onClick={() => handleManualClockOut(emp)}>
+                                                <LogOut className="mr-2 h-4 w-4 text-destructive" />
+                                                <span>Schicht beenden</span>
+                                              </DropdownMenuItem>
+                                            </>
+                                          )}
+                                        </DropdownMenuContent>
+                                      </DropdownMenu>
+                                    )}
                                     <DropdownMenu>
                                       <DropdownMenuTrigger asChild>
-                                        <Button variant="ghost" size="icon" className="h-8 w-8 text-green-600" title="Stempeluhr">
-                                          <Clock className="w-4 h-4" />
+                                        <Button variant="ghost" size="icon" className="h-8 w-8 text-indigo-600">
+                                          <Share2 className="w-4 h-4" />
                                         </Button>
                                       </DropdownMenuTrigger>
                                       <DropdownMenuContent align="end">
-                                        <DropdownMenuLabel>Stempeluhr</DropdownMenuLabel>
+                                        <DropdownMenuLabel>Link teilen</DropdownMenuLabel>
                                         <DropdownMenuSeparator />
-                                        {status === 'absent' && (
-                                          <DropdownMenuItem onClick={() => handleManualClockIn(emp)}>
-                                            <LogIn className="mr-2 h-4 w-4 text-green-600" />
-                                            <span>Einstempeln</span>
-                                          </DropdownMenuItem>
-                                        )}
-                                        {status === 'present' && (
-                                          <>
-                                            <DropdownMenuItem onClick={() => handleManualPause(emp)}>
-                                              <Coffee className="mr-2 h-4 w-4 text-amber-600" />
-                                              <span>Pause setzen</span>
-                                            </DropdownMenuItem>
-                                            <DropdownMenuItem onClick={() => handleManualClockOut(emp)}>
-                                              <LogOut className="mr-2 h-4 w-4 text-destructive" />
-                                              <span>Ausstempeln</span>
-                                            </DropdownMenuItem>
-                                          </>
-                                        )}
-                                        {status === 'pause' && (
-                                          <>
-                                            <DropdownMenuItem onClick={() => handleManualClockIn(emp)}>
-                                              <Play className="mr-2 h-4 w-4 text-green-600" />
-                                              <span>Pause beenden</span>
-                                            </DropdownMenuItem>
-                                            <DropdownMenuItem onClick={() => handleManualClockOut(emp)}>
-                                              <LogOut className="mr-2 h-4 w-4 text-destructive" />
-                                              <span>Schicht beenden</span>
-                                            </DropdownMenuItem>
-                                          </>
-                                        )}
+                                        <DropdownMenuItem onClick={() => setQrCodeEmployee(emp)}>
+                                          <QrCode className="mr-2 h-4 w-4" />
+                                          <span>QR-Code zum Scannen (App)</span>
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem onClick={() => handleShareApp(emp, 'whatsapp')}>
+                                          <MessageCircle className="mr-2 h-4 w-4" />
+                                          <span>Über WhatsApp senden</span>
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem onClick={() => handleShareApp(emp, 'email')}>
+                                          <Mail className="mr-2 h-4 w-4" />
+                                          <span>Per E-Mail senden</span>
+                                        </DropdownMenuItem>
+                                        <DropdownMenuSeparator />
+                                        <DropdownMenuItem onClick={() => handleShareApp(emp, 'copy')}>
+                                          <Copy className="mr-2 h-4 w-4" />
+                                          <span>Link in Zwischenablage kopieren</span>
+                                        </DropdownMenuItem>
                                       </DropdownMenuContent>
                                     </DropdownMenu>
-                                  )}
-                                  <DropdownMenu>
-                                    <DropdownMenuTrigger asChild>
-                                      <Button variant="ghost" size="icon" className="h-8 w-8 text-indigo-600">
-                                        <Share2 className="w-4 h-4" />
-                                      </Button>
-                                    </DropdownMenuTrigger>
-                                    <DropdownMenuContent align="end">
-                                      <DropdownMenuLabel>Link teilen</DropdownMenuLabel>
-                                      <DropdownMenuSeparator />
-                                      <DropdownMenuItem onClick={() => setQrCodeEmployee(emp)}>
-                                        <QrCode className="mr-2 h-4 w-4" />
-                                        <span>QR-Code zum Scannen (App)</span>
-                                      </DropdownMenuItem>
-                                      <DropdownMenuItem onClick={() => handleShareApp(emp, 'whatsapp')}>
-                                        <MessageCircle className="mr-2 h-4 w-4" />
-                                        <span>Über WhatsApp senden</span>
-                                      </DropdownMenuItem>
-                                      <DropdownMenuItem onClick={() => handleShareApp(emp, 'email')}>
-                                        <Mail className="mr-2 h-4 w-4" />
-                                        <span>Per E-Mail senden</span>
-                                      </DropdownMenuItem>
-                                      <DropdownMenuSeparator />
-                                      <DropdownMenuItem onClick={() => handleShareApp(emp, 'copy')}>
-                                        <Copy className="mr-2 h-4 w-4" />
-                                        <span>Link in Zwischenablage kopieren</span>
-                                      </DropdownMenuItem>
-                                    </DropdownMenuContent>
-                                  </DropdownMenu>
 
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <Button variant="ghost" size="icon" className="h-8 w-8 text-primary" onClick={() => {
-                                        setViewingLogsEmployee(emp);
-                                      }}>
-                                        <ClipboardList className="w-4 h-4" />
-                                      </Button>
-                                    </TooltipTrigger>
-                                    <TooltipContent>Zeitprotokoll & Historie</TooltipContent>
-                                  </Tooltip>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Button variant="ghost" size="icon" className="h-8 w-8 text-primary" onClick={() => {
+                                          setViewingLogsEmployee(emp);
+                                        }}>
+                                          <ClipboardList className="w-4 h-4" />
+                                        </Button>
+                                      </TooltipTrigger>
+                                      <TooltipContent>Zeitprotokoll & Historie</TooltipContent>
+                                    </Tooltip>
 
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <Button
-                                        variant="ghost" size="icon"
-                                        className="h-8 w-8 text-violet-600"
-                                        title="Arbeitszeit nachtragen"
-                                        onClick={() => {
-                                          setManualWorkEmployee(emp);
-                                          setManualWorkDate(format(new Date(), 'yyyy-MM-dd'));
-                                          setManualWorkStart('08:00');
-                                          setManualWorkEnd('17:00');
-                                          setManualWorkBreak('30');
-                                          setIsManualWorkEntryOpen(true);
-                                        }}
-                                      >
-                                        <CalendarClock className="w-4 h-4" />
-                                      </Button>
-                                    </TooltipTrigger>
-                                    <TooltipContent>Arbeitszeit nachtragen</TooltipContent>
-                                  </Tooltip>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Button
+                                          variant="ghost" size="icon"
+                                          className="h-8 w-8 text-violet-600"
+                                          title="Arbeitszeit nachtragen"
+                                          onClick={() => {
+                                            setManualWorkEmployee(emp);
+                                            setManualWorkDate(format(new Date(), 'yyyy-MM-dd'));
+                                            setManualWorkStart('08:00');
+                                            setManualWorkEnd('17:00');
+                                            setManualWorkBreak('30');
+                                            setIsManualWorkEntryOpen(true);
+                                          }}
+                                        >
+                                          <CalendarClock className="w-4 h-4" />
+                                        </Button>
+                                      </TooltipTrigger>
+                                      <TooltipContent>Arbeitszeit nachtragen</TooltipContent>
+                                    </Tooltip>
 
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <Button variant="ghost" size="icon" className="h-8 w-8 text-primary" onClick={() => {
-                                        setEditingEmployee(emp);
-                                        setEditName(emp.fullName);
-                                        setEditPosition(emp.position || '');
-                                        setEditHours(String(emp.agreedHours || 40));
-                                        setEditPeriod(emp.agreedHoursPeriod || 'weekly');
-                                        setEditVacation(String(emp.vacationDays || 0));
-                                        setEditSickDays(String(emp.sickDays || 0));
-                                        setEditPauseAddMode(emp.pauseAddMode || false);
-                                      }}>
-                                        <Pencil className="w-4 h-4" />
-                                      </Button>
-                                    </TooltipTrigger>
-                                    <TooltipContent>Mitarbeiter bearbeiten</TooltipContent>
-                                  </Tooltip>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Button variant="ghost" size="icon" className="h-8 w-8 text-primary" onClick={() => {
+                                          setEditingEmployee(emp);
+                                          setEditName(emp.fullName);
+                                          setEditPosition(emp.position || '');
+                                          setEditHours(String(emp.agreedHours || 40));
+                                          setEditPeriod(emp.agreedHoursPeriod || 'weekly');
+                                          setEditVacation(String(emp.vacationDays || 0));
+                                          setEditSickDays(String(emp.sickDays || 0));
+                                          setEditPauseAddMode(emp.pauseAddMode || false);
+                                        }}>
+                                          <Pencil className="w-4 h-4" />
+                                        </Button>
+                                      </TooltipTrigger>
+                                      <TooltipContent>Mitarbeiter bearbeiten</TooltipContent>
+                                    </Tooltip>
 
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <Button variant="ghost" size="icon" className="h-8 w-8 text-amber-600" onClick={() => setAdjustingEmployee(emp)} disabled={!isFeatureActive}>
-                                        <History className="w-4 h-4" />
-                                      </Button>
-                                    </TooltipTrigger>
-                                    <TooltipContent>Saldo anpassen</TooltipContent>
-                                  </Tooltip>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Button variant="ghost" size="icon" className="h-8 w-8 text-amber-600" onClick={() => setAdjustingEmployee(emp)} disabled={!isFeatureActive}>
+                                          <History className="w-4 h-4" />
+                                        </Button>
+                                      </TooltipTrigger>
+                                      <TooltipContent>Saldo anpassen</TooltipContent>
+                                    </Tooltip>
 
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => toggleArchive(emp)}>
-                                        {emp.isArchived ? <RotateCcw className="w-4 h-4 text-green-600" /> : <Archive className="w-4 h-4 text-muted-foreground" />}
-                                      </Button>
-                                    </TooltipTrigger>
-                                    <TooltipContent>{emp.isArchived ? 'Reaktivieren' : 'Archivieren'}</TooltipContent>
-                                  </Tooltip>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => toggleArchive(emp)}>
+                                          {emp.isArchived ? <RotateCcw className="w-4 h-4 text-green-600" /> : <Archive className="w-4 h-4 text-muted-foreground" />}
+                                        </Button>
+                                      </TooltipTrigger>
+                                      <TooltipContent>{emp.isArchived ? 'Reaktivieren' : 'Archivieren'}</TooltipContent>
+                                    </Tooltip>
 
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleDeleteEmployee(emp)} disabled={!emp.isArchived}>
-                                        <Trash2 className="w-4 h-4" />
-                                      </Button>
-                                    </TooltipTrigger>
-                                    <TooltipContent>Löschen (nur Archiv)</TooltipContent>
-                                  </Tooltip>
-                                </div>
-                              </TableCell>
-                            </TableRow>
-                          );
-                        })
-                      ) : (
-                        <TableRow><TableCell colSpan={8} className="h-48 text-center text-muted-foreground">Keine Daten.</TableCell></TableRow>
-                      )}
-                    </TableBody>
-                  </Table>
-                </CardContent>
-              </Card>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleDeleteEmployee(emp)} disabled={!emp.isArchived}>
+                                          <Trash2 className="w-4 h-4" />
+                                        </Button>
+                                      </TooltipTrigger>
+                                      <TooltipContent>Löschen (nur Archiv)</TooltipContent>
+                                    </Tooltip>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })
+                        ) : (
+                          <TableRow><TableCell colSpan={8} className="h-48 text-center text-muted-foreground">Keine Daten.</TableCell></TableRow>
+                        )}
+                      </TableBody>
+                    </Table>
+                  </CardContent>
+                </Card>
 
-              {/* ── Standort-Sperre (Location Lock) ── */}
-              <Card className="border-none shadow-xl rounded-2xl overflow-hidden bg-white/90">
-                <CardHeader className="bg-white pb-4 border-b">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 bg-emerald-100 rounded-xl">
-                      <Wifi className="w-5 h-5 text-emerald-600" />
-                    </div>
-                    <div>
-                      <CardTitle className="text-lg">Standort-Sperre</CardTitle>
-                      <CardDescription>Stempeln nur aus dem Firmen-WLAN erlauben</CardDescription>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="p-6 space-y-6">
-                  {/* Enable/Disable Toggle */}
-                  <div className="flex items-center justify-between p-4 bg-muted/30 rounded-2xl">
+                {/* ── Standort-Sperre (Location Lock) ── */}
+                <Card className="border-none shadow-xl rounded-2xl overflow-hidden bg-white/90">
+                  <CardHeader className="bg-white pb-4 border-b">
                     <div className="flex items-center gap-3">
-                      <ShieldCheck className="w-5 h-5 text-primary" />
+                      <div className="p-2 bg-emerald-100 rounded-xl">
+                        <Wifi className="w-5 h-5 text-emerald-600" />
+                      </div>
                       <div>
-                        <p className="font-bold text-sm">Standort-Prüfung aktivieren</p>
-                        <p className="text-xs text-muted-foreground">Mitarbeiter können nur vor Ort stempeln</p>
+                        <CardTitle className="text-lg">Standort-Sperre</CardTitle>
+                        <CardDescription>Stempeln nur aus dem Firmen-WLAN erlauben</CardDescription>
                       </div>
                     </div>
-                    <Switch
-                      id="location-lock"
-                      checked={adminData?.locationLockEnabled === true}
-                      onCheckedChange={(checked) => {
-                        if (!firestore || !activeAdminUid || impersonateAdmin) return;
-                        updateDocumentNonBlocking(doc(firestore, 'adminUsers', activeAdminUid), {
-                          locationLockEnabled: checked,
-                        });
-                        toast({
-                          title: checked ? 'Standort-Sperre aktiviert' : 'Standort-Sperre deaktiviert',
-                          description: checked
-                            ? 'Mitarbeiter können nur noch aus dem Firmen-Netzwerk stempeln.'
-                            : 'Stempeln ist jetzt von überall möglich.',
-                        });
-                      }}
-                    />
-                  </div>
+                  </CardHeader>
+                  <CardContent className="p-6 space-y-6">
+                    {/* Enable/Disable Toggle */}
+                    <div className="flex items-center justify-between p-4 bg-muted/30 rounded-2xl">
+                      <div className="flex items-center gap-3">
+                        <ShieldCheck className="w-5 h-5 text-primary" />
+                        <div>
+                          <p className="font-bold text-sm">Standort-Prüfung aktivieren</p>
+                          <p className="text-xs text-muted-foreground">Mitarbeiter können nur vor Ort stempeln</p>
+                        </div>
+                      </div>
+                      <Switch
+                        id="location-lock"
+                        checked={adminData?.locationLockEnabled === true}
+                        onCheckedChange={(checked) => {
+                          if (!firestore || !activeAdminUid) return;
+                          updateDocumentNonBlocking(doc(firestore, 'adminUsers', activeAdminUid), {
+                            locationLockEnabled: checked,
+                          });
+                          toast({
+                            title: checked ? 'Standort-Sperre aktiviert' : 'Standort-Sperre deaktiviert',
+                            description: checked
+                              ? 'Mitarbeiter können nur noch aus dem Firmen-Netzwerk stempeln.'
+                              : 'Stempeln ist jetzt von überall möglich.',
+                          });
+                        }}
+                      />
+                    </div>
 
-                  {/* Save IP Button + Current Status */}
-                  <div className="space-y-4">
-                    <div className={`p-5 rounded-2xl border-2 transition-all ${
-                      adminData?.locationIp
-                        ? 'border-emerald-200 bg-emerald-50/50'
-                        : 'border-dashed border-muted-foreground/20 bg-muted/10'
-                    }`}>
-                      <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-                        <div className="flex items-center gap-3 text-center sm:text-left">
-                          <div className={`p-2.5 rounded-xl shrink-0 ${
-                            adminData?.locationIp ? 'bg-emerald-100' : 'bg-muted'
-                          }`}>
-                            <MapPin className={`w-5 h-5 ${
-                              adminData?.locationIp ? 'text-emerald-600' : 'text-muted-foreground'
-                            }`} />
+                    {/* Save IP Button + Current Status */}
+                    <div className="space-y-4">
+                      <div className={`p-5 rounded-2xl border-2 transition-all ${adminData?.locationIp
+                          ? 'border-emerald-200 bg-emerald-50/50'
+                          : 'border-dashed border-muted-foreground/20 bg-muted/10'
+                        }`}>
+                        <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                          <div className="flex items-center gap-3 text-center sm:text-left">
+                            <div className={`p-2.5 rounded-xl shrink-0 ${adminData?.locationIp ? 'bg-emerald-100' : 'bg-muted'
+                              }`}>
+                              <MapPin className={`w-5 h-5 ${adminData?.locationIp ? 'text-emerald-600' : 'text-muted-foreground'
+                                }`} />
+                            </div>
+                            <div>
+                              {adminData?.locationIp ? (
+                                <>
+                                  <p className="font-bold text-sm text-emerald-800">Firmen-IP gespeichert</p>
+                                  <p className="text-xs text-emerald-600 font-mono">{adminData.locationIp}</p>
+                                </>
+                              ) : (
+                                <>
+                                  <p className="font-bold text-sm">Keine Firmen-IP hinterlegt</p>
+                                  <p className="text-xs text-muted-foreground">Verbinden Sie sich mit dem Firmen-WLAN und klicken Sie auf den Button.</p>
+                                </>
+                              )}
+                            </div>
                           </div>
-                          <div>
-                            {adminData?.locationIp ? (
-                              <>
-                                <p className="font-bold text-sm text-emerald-800">Firmen-IP gespeichert</p>
-                                <p className="text-xs text-emerald-600 font-mono">{adminData.locationIp}</p>
-                              </>
+                          {!impersonateAdmin ? (
+                            <Button
+                              variant={adminData?.locationIp ? 'outline' : 'default'}
+                              className="rounded-xl gap-2 shrink-0 h-11 px-5"
+                              disabled={isLocationSaving}
+                              onClick={async () => {
+                                if (!firestore || !activeAdminUid) return;
+                                setIsLocationSaving(true);
+                                try {
+                                  const res = await fetch('/api/get-ip');
+                                  const data = await res.json();
+                                  if (!data.ip || data.ip === 'unknown') {
+                                    toast({ title: 'Fehler', description: 'IP-Adresse konnte nicht ermittelt werden.', variant: 'destructive' });
+                                    return;
+                                  }
+                                  await updateDocumentNonBlocking(doc(firestore, 'adminUsers', activeAdminUid), {
+                                    locationIp: data.ip,
+                                  });
+                                  toast({
+                                    title: 'Firmen-IP gespeichert',
+                                    description: `Die IP ${data.ip} wurde als Standort hinterlegt.`,
+                                  });
+                                } catch (err) {
+                                  toast({ title: 'Fehler', description: 'IP konnte nicht gespeichert werden.', variant: 'destructive' });
+                                } finally {
+                                  setIsLocationSaving(false);
+                                }
+                              }}
+                            >
+                              {isLocationSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wifi className="w-4 h-4" />}
+                              {adminData?.locationIp ? 'IP aktualisieren' : 'Aktuelle IP speichern'}
+                            </Button>
+                          ) : (
+                            adminData?.lastClientIp ? (
+                              <Button
+                                variant={adminData?.locationIp ? 'outline' : 'default'}
+                                className="rounded-xl gap-2 shrink-0 h-11 px-5"
+                                disabled={isLocationSaving}
+                                onClick={async () => {
+                                  if (!firestore || !activeAdminUid || !adminData?.lastClientIp) return;
+                                  setIsLocationSaving(true);
+                                  try {
+                                    await updateDocumentNonBlocking(doc(firestore, 'adminUsers', activeAdminUid), {
+                                      locationIp: adminData.lastClientIp,
+                                    });
+                                    toast({
+                                      title: 'Firmen-IP gespeichert',
+                                      description: `Die Kunden-IP ${adminData.lastClientIp} wurde als Standort übernommen.`,
+                                    });
+                                  } catch (err) {
+                                    toast({ title: 'Fehler', description: 'IP konnte nicht gespeichert werden.', variant: 'destructive' });
+                                  } finally {
+                                    setIsLocationSaving(false);
+                                  }
+                                }}
+                              >
+                                {isLocationSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wifi className="w-4 h-4" />}
+                                {adminData?.locationIp ? 'IP aktualisieren' : 'Kunden-IP übernehmen'}
+                              </Button>
                             ) : (
-                              <>
-                                <p className="font-bold text-sm">Keine Firmen-IP hinterlegt</p>
-                                <p className="text-xs text-muted-foreground">Verbinden Sie sich mit dem Firmen-WLAN und klicken Sie auf den Button.</p>
-                              </>
-                            )}
+                              <Badge variant="secondary" className="px-4 py-2 bg-amber-100 text-amber-700 font-medium">
+                                Warte auf Kunden-Besuch…
+                              </Badge>
+                            )
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Show last reported client IP when impersonating */}
+                      {impersonateAdmin && (
+                        <div className={`p-4 rounded-2xl border-2 transition-all ${
+                          adminData?.lastClientIp
+                            ? 'border-amber-200 bg-amber-50/50'
+                            : 'border-dashed border-amber-300/30 bg-amber-50/20'
+                        }`}>
+                          <div className="flex items-center gap-3">
+                            <div className={`p-2 rounded-xl shrink-0 ${
+                              adminData?.lastClientIp ? 'bg-amber-100' : 'bg-muted'
+                            }`}>
+                              <MapPin className={`w-5 h-5 ${
+                                adminData?.lastClientIp ? 'text-amber-600' : 'text-muted-foreground'
+                              }`} />
+                            </div>
+                            <div>
+                              {adminData?.lastClientIp ? (
+                                <>
+                                  <p className="font-bold text-sm text-amber-800">Letzte Kunden-IP erkannt</p>
+                                  <p className="text-xs text-amber-600 font-mono">{adminData.lastClientIp}</p>
+                                  {adminData.lastClientIpAt && (
+                                    <p className="text-[11px] text-amber-500 mt-0.5">
+                                      Zuletzt gemeldet: {format(new Date(adminData.lastClientIpAt), 'dd.MM.yyyy HH:mm', { locale: de })} Uhr
+                                    </p>
+                                  )}
+                                </>
+                              ) : (
+                                <>
+                                  <p className="font-bold text-sm text-amber-800">Noch keine Kunden-IP bekannt</p>
+                                  <p className="text-xs text-muted-foreground">Der Kunde oder ein Mitarbeiter muss einmal die App öffnen.</p>
+                                </>
+                              )}
+                            </div>
                           </div>
                         </div>
-                        <Button
-                          variant={adminData?.locationIp ? 'outline' : 'default'}
-                          className="rounded-xl gap-2 shrink-0 h-11 px-5"
-                          disabled={isLocationSaving || !!impersonateAdmin}
-                          onClick={async () => {
-                            if (!firestore || !activeAdminUid) return;
-                            setIsLocationSaving(true);
-                            try {
-                              const res = await fetch('/api/get-ip');
-                              const data = await res.json();
-                              if (!data.ip || data.ip === 'unknown') {
-                                toast({ title: 'Fehler', description: 'IP-Adresse konnte nicht ermittelt werden.', variant: 'destructive' });
-                                return;
-                              }
-                              await updateDocumentNonBlocking(doc(firestore, 'adminUsers', activeAdminUid), {
-                                locationIp: data.ip,
-                              });
-                              toast({
-                                title: 'Firmen-IP gespeichert',
-                                description: `Die IP ${data.ip} wurde als Standort hinterlegt.`,
-                              });
-                            } catch (err) {
-                              toast({ title: 'Fehler', description: 'IP konnte nicht gespeichert werden.', variant: 'destructive' });
-                            } finally {
-                              setIsLocationSaving(false);
-                            }
-                          }}
-                        >
-                          {isLocationSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wifi className="w-4 h-4" />}
-                          {adminData?.locationIp ? 'IP aktualisieren' : 'Aktuelle IP speichern'}
-                        </Button>
-                      </div>
-                    </div>
+                      )}
 
-                    {/* Info hint */}
-                    <div className="flex items-start gap-3 text-xs text-muted-foreground bg-blue-50 border border-blue-100 p-4 rounded-2xl">
-                      <ShieldAlert className="w-4 h-4 text-blue-500 mt-0.5 shrink-0" />
-                      <p>
-                        <strong className="text-blue-700">So funktioniert es:</strong> Stellen Sie sicher, dass Sie gerade mit dem WLAN Ihres Betriebes verbunden sind, und klicken Sie auf &quot;{adminData?.locationIp ? 'IP aktualisieren' : 'Aktuelle IP speichern'}&quot;. Danach können Mitarbeiter nur stempeln, wenn sie im selben Netzwerk sind.
-                      </p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </TabsContent>
-
-            {/* ============================================ DIENSTPLAN TAB ============================================ */}
-            <TabsContent value="schedule" className="mt-0 space-y-6">
-              <Card className="border-none shadow-xl rounded-2xl overflow-hidden bg-white/90">
-                <CardHeader className="bg-white pb-6 border-b">
-                  <div className="flex flex-wrap items-center justify-between gap-4">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 bg-primary/10 rounded-xl">
-                        <CalendarCheck2 className="w-6 h-6 text-primary" />
-                      </div>
-                      <div>
-                        <h2 className="text-lg font-bold">Wochendienstplan</h2>
-                        <p className="text-sm text-muted-foreground">
-                          {format(scheduleWeekStart, 'dd. MMMM', { locale: de })} – {format(addDays(scheduleWeekStart, 6), 'dd. MMMM yyyy', { locale: de })}
+                      {/* Info hint */}
+                      <div className={`flex items-start gap-3 text-xs text-muted-foreground p-4 rounded-2xl ${
+                        impersonateAdmin ? 'bg-amber-50 border border-amber-100' : 'bg-blue-50 border border-blue-100'
+                      }`}>
+                        <ShieldAlert className={`w-4 h-4 mt-0.5 shrink-0 ${
+                          impersonateAdmin ? 'text-amber-500' : 'text-blue-500'
+                        }`} />
+                        <p>
+                          {impersonateAdmin ? (
+                            <>
+                              <strong className="text-amber-700">Support-Modus:</strong> Bitten Sie den Kunden, die ZeitScan-App (Portal oder MA-Link) einmal im Firmen-WLAN zu öffnen. Die IP wird automatisch erkannt. Dann klicken Sie auf &quot;Kunden-IP übernehmen&quot; und aktivieren den Toggle oben.
+                            </>
+                          ) : (
+                            <>
+                              <strong className="text-blue-700">So funktioniert es:</strong> Stellen Sie sicher, dass Sie gerade mit dem WLAN Ihres Betriebes verbunden sind, und klicken Sie auf &quot;{adminData?.locationIp ? 'IP aktualisieren' : 'Aktuelle IP speichern'}&quot;. Danach können Mitarbeiter nur stempeln, wenn sie im selben Netzwerk sind.
+                            </>
+                          )}
                         </p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <Button variant="outline" size="icon" className="rounded-xl" onClick={() => setScheduleWeekStart(w => subDays(w, 7))}>
-                        <ChevronLeft className="w-4 h-4" />
-                      </Button>
-                      <Button variant="outline" size="sm" className="rounded-xl" onClick={() => setScheduleWeekStart(startOfWeekFn(new Date(), { weekStartsOn: 1 }))}>
-                        Heute
-                      </Button>
-                      <Button variant="outline" size="icon" className="rounded-xl" onClick={() => setScheduleWeekStart(w => addDays(w, 7))}>
-                        <ChevronRightIcon className="w-4 h-4" />
-                      </Button>
-                      <Button className="rounded-xl gap-2" onClick={() => setIsAddShiftOpen(true)}>
-                        <Plus className="w-4 h-4" /> Schicht eintragen
-                      </Button>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="p-0 overflow-x-auto">
-                  {/* Weekly Grid */}
-                  {(() => {
-                    const days = Array.from({ length: 7 }, (_, i) => addDays(scheduleWeekStart, i));
-                    const DAY_NAMES = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
-                    const activeEmployees = (employees || []).filter(e => !e.isArchived);
+                  </CardContent>
+                </Card>
+              </TabsContent>
 
-                    return (
-                      <div className="min-w-[700px]">
-                        {/* Header Row */}
-                        <div className="grid grid-cols-[180px_repeat(7,1fr)] border-b">
-                          <div className="p-3 bg-muted/30 text-xs font-bold text-muted-foreground uppercase tracking-wide">Mitarbeiter</div>
-                          {days.map((day, i) => (
-                            <div key={i} className={`p-3 text-center border-l text-xs font-bold uppercase tracking-wide ${
-                              isToday(day) ? 'bg-primary text-primary-foreground' : 'bg-muted/30 text-muted-foreground'
-                            }`}>
-                              <div>{DAY_NAMES[i]}</div>
-                              <div className="text-base font-black">{format(day, 'd')}</div>
-                            </div>
-                          ))}
+              {/* ============================================ DIENSTPLAN TAB ============================================ */}
+              <TabsContent value="schedule" className="mt-0 space-y-6">
+                <Card className="border-none shadow-xl rounded-2xl overflow-hidden bg-white/90">
+                  <CardHeader className="bg-white pb-6 border-b">
+                    <div className="flex flex-wrap items-center justify-between gap-4">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 bg-primary/10 rounded-xl">
+                          <CalendarCheck2 className="w-6 h-6 text-primary" />
                         </div>
-
-                        {/* Employee Rows */}
-                        {activeEmployees.length === 0 ? (
-                          <div className="p-12 text-center text-muted-foreground text-sm">
-                            Keine aktiven Mitarbeiter vorhanden.
-                          </div>
-                        ) : (
-                          activeEmployees.map(emp => (
-                            <div key={emp.id} className="grid grid-cols-[180px_repeat(7,1fr)] border-b hover:bg-primary/5 transition-colors group">
-                              <div className="p-3 flex flex-col justify-center border-r">
-                                <span className="font-medium text-sm truncate">{emp.fullName}</span>
-                                <span className="text-[10px] text-muted-foreground">{emp.position || 'Mitarbeiter'}</span>
-                              </div>
-                              {days.map((day, di) => {
-                                const dateStr = format(day, 'yyyy-MM-dd');
-                                const dayShifts = (schedules || []).filter(s => s.employeeId === emp.id && s.date === dateStr);
-                                return (
-                                  <div key={di} className={`p-1.5 border-l min-h-[64px] flex flex-col gap-1 ${
-                                    isToday(day) ? 'bg-primary/5' : ''
-                                  }`}>
-                                    {dayShifts.map(shift => (
-                                      <div key={shift.id} className="bg-primary text-primary-foreground rounded-lg px-2 py-1.5 text-[10px] font-medium flex items-start justify-between gap-1 group/shift">
-                                        <div className="min-w-0">
-                                          <div className="font-bold">{shift.shiftStart}{shift.shiftEnd ? `–${shift.shiftEnd}` : ' →'}</div>
-                                          {shift.breakStart && (
-                                            <div className="flex items-center gap-0.5 mt-0.5 opacity-80">
-                                              <Coffee className="w-2.5 h-2.5 shrink-0" />
-                                              <span>{shift.breakStart}{shift.breakEnd ? '–' + shift.breakEnd : ''}</span>
-                                            </div>
-                                          )}
-                                          {shift.note && <div className="opacity-70 truncate max-w-[80px] mt-0.5 italic">{shift.note}</div>}
-                                        </div>
-                                        <button
-                                          onClick={() => handleDeleteShift(shift)}
-                                          className="opacity-0 group-hover/shift:opacity-100 transition-opacity text-primary-foreground/70 hover:text-primary-foreground mt-0.5 shrink-0"
-                                        >
-                                          <X className="w-3 h-3" />
-                                        </button>
-                                      </div>
-                                    ))}
-                                    {dayShifts.length === 0 && (
-                                      <button
-                                        onClick={() => {
-                                          setShiftEmployee(emp.id);
-                                          setShiftDate(dateStr);
-                                          setIsAddShiftOpen(true);
-                                        }}
-                                        className="w-full h-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity rounded-lg border-2 border-dashed border-muted-foreground/20 hover:border-primary/40 hover:bg-primary/5"
-                                      >
-                                        <Plus className="w-3 h-3 text-muted-foreground/40" />
-                                      </button>
-                                    )}
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          ))
-                        )}
+                        <div>
+                          <h2 className="text-lg font-bold">Wochendienstplan</h2>
+                          <p className="text-sm text-muted-foreground">
+                            {format(scheduleWeekStart, 'dd. MMMM', { locale: de })} – {format(addDays(scheduleWeekStart, 6), 'dd. MMMM yyyy', { locale: de })}
+                          </p>
+                        </div>
                       </div>
-                    );
-                  })()}
-                </CardContent>
-              </Card>
-
-              {/* Schedule info card */}
-              <Card className="border-primary/20 bg-primary/5 border rounded-2xl">
-                <CardContent className="p-4 flex items-start gap-3">
-                  <ShieldAlert className="w-5 h-5 text-primary mt-0.5 shrink-0" />
-                  <div className="text-sm">
-                    <p className="font-bold text-primary">Dienstplan-Sperre aktiv</p>
-                    <p className="text-muted-foreground">Mitarbeiter können sich am Terminal nur einstempeln, wenn sie für den heutigen Tag im Dienstplan eingetragen sind. Nicht eingeplante Mitarbeiter werden gesperrt.</p>
-                  </div>
-                </CardContent>
-              </Card>
-            </TabsContent>
-
-            <TabsContent value="billing" className="space-y-8">
-              <Card className="border-none shadow-xl rounded-2xl bg-white/90 max-w-2xl mx-auto">
-                <CardHeader className="text-center p-8">
-                  <CreditCard className="w-12 h-12 text-primary mx-auto mb-4" />
-                  <CardTitle>Abo &amp; Abrechnung</CardTitle>
-                  <CardDescription>Verwalten Sie Ihre Pro-Funktionen und Ihr Abonnement.</CardDescription>
-                </CardHeader>
-                <CardContent className="p-8 pt-0 space-y-8">
-                  {/* Current Plan Status */}
-                  <div className="p-6 border-2 border-dashed rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 bg-muted/20">
-                    <div className="space-y-1 text-center sm:text-left">
-                      <h3 className="font-bold text-lg">ZeitScan Pro Plan</h3>
-                      <p className="text-sm text-muted-foreground">Premium-Funktionen für Ihr Team</p>
+                      <div className="flex items-center gap-2">
+                        <Button variant="outline" size="icon" className="rounded-xl" onClick={() => setScheduleWeekStart(w => subDays(w, 7))}>
+                          <ChevronLeft className="w-4 h-4" />
+                        </Button>
+                        <Button variant="outline" size="sm" className="rounded-xl" onClick={() => setScheduleWeekStart(startOfWeekFn(new Date(), { weekStartsOn: 1 }))}>
+                          Heute
+                        </Button>
+                        <Button variant="outline" size="icon" className="rounded-xl" onClick={() => setScheduleWeekStart(w => addDays(w, 7))}>
+                          <ChevronRightIcon className="w-4 h-4" />
+                        </Button>
+                        <Button className="rounded-xl gap-2" onClick={() => setIsAddShiftOpen(true)}>
+                          <Plus className="w-4 h-4" /> Schicht eintragen
+                        </Button>
+                      </div>
                     </div>
-                    {isFeatureActive ? (
-                      <Badge className="bg-green-100 text-green-700 border-none px-4 py-2">Trial: {trialDaysLeft} Tage übrig</Badge>
-                    ) : (
-                      <Badge className="bg-destructive/10 text-destructive border-none px-4 py-2">Trial abgelaufen</Badge>
-                    )}
-                  </div>
+                  </CardHeader>
+                  <CardContent className="p-0 overflow-x-auto">
+                    {/* Weekly Grid */}
+                    {(() => {
+                      const days = Array.from({ length: 7 }, (_, i) => addDays(scheduleWeekStart, i));
+                      const DAY_NAMES = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
+                      const activeEmployees = (employees || []).filter(e => !e.isArchived);
 
-                  {/* Subscribe / Manage Section */}
-                  <div className="space-y-4">
-                    <Card className="border-2 border-primary/20 bg-gradient-to-br from-primary/5 to-primary/10 rounded-2xl overflow-hidden">
-                      <CardContent className="p-6 space-y-6">
-                        <div className="flex items-start gap-4">
-                          <div className="p-3 bg-white rounded-xl shadow-sm shrink-0">
-                            <Sparkles className="w-6 h-6 text-primary" />
+                      return (
+                        <div className="min-w-[700px]">
+                          {/* Header Row */}
+                          <div className="grid grid-cols-[180px_repeat(7,1fr)] border-b">
+                            <div className="p-3 bg-muted/30 text-xs font-bold text-muted-foreground uppercase tracking-wide">Mitarbeiter</div>
+                            {days.map((day, i) => (
+                              <div key={i} className={`p-3 text-center border-l text-xs font-bold uppercase tracking-wide ${isToday(day) ? 'bg-primary text-primary-foreground' : 'bg-muted/30 text-muted-foreground'
+                                }`}>
+                                <div>{DAY_NAMES[i]}</div>
+                                <div className="text-base font-black">{format(day, 'd')}</div>
+                              </div>
+                            ))}
                           </div>
-                          <div className="space-y-1">
-                            <h4 className="font-bold text-lg">ZeitScan Pro</h4>
-                            <p className="text-sm text-muted-foreground">Unbegrenzter Zugriff auf alle Funktionen, unbegrenzte Mitarbeiter, CSV-Exporte, Dienstplanung und mehr.</p>
-                          </div>
-                        </div>
 
-                        <div className="grid grid-cols-2 gap-3">
-                          {[
-                            'Unbegrenzte Mitarbeiter',
-                            'Terminal & QR-Codes',
-                            'CSV-Exporte & Berichte',
-                            'Dienstplanung',
-                            'Urlaub- & Krankheitsverwaltung',
-                            'Überstundenverwaltung',
-                          ].map(feature => (
-                            <div key={feature} className="flex items-center gap-2 text-sm">
-                              <div className="w-1.5 h-1.5 rounded-full bg-primary shrink-0" />
-                              <span className="text-muted-foreground">{feature}</span>
+                          {/* Employee Rows */}
+                          {activeEmployees.length === 0 ? (
+                            <div className="p-12 text-center text-muted-foreground text-sm">
+                              Keine aktiven Mitarbeiter vorhanden.
                             </div>
-                          ))}
+                          ) : (
+                            activeEmployees.map(emp => (
+                              <div key={emp.id} className="grid grid-cols-[180px_repeat(7,1fr)] border-b hover:bg-primary/5 transition-colors group">
+                                <div className="p-3 flex flex-col justify-center border-r">
+                                  <span className="font-medium text-sm truncate">{emp.fullName}</span>
+                                  <span className="text-[10px] text-muted-foreground">{emp.position || 'Mitarbeiter'}</span>
+                                </div>
+                                {days.map((day, di) => {
+                                  const dateStr = format(day, 'yyyy-MM-dd');
+                                  const dayShifts = (schedules || []).filter(s => s.employeeId === emp.id && s.date === dateStr);
+                                  return (
+                                    <div key={di} className={`p-1.5 border-l min-h-[64px] flex flex-col gap-1 ${isToday(day) ? 'bg-primary/5' : ''
+                                      }`}>
+                                      {dayShifts.map(shift => (
+                                        <div key={shift.id} className="bg-primary text-primary-foreground rounded-lg px-2 py-1.5 text-[10px] font-medium flex items-start justify-between gap-1 group/shift">
+                                          <div className="min-w-0">
+                                            <div className="font-bold">{shift.shiftStart}{shift.shiftEnd ? `–${shift.shiftEnd}` : ' →'}</div>
+                                            {shift.breakStart && (
+                                              <div className="flex items-center gap-0.5 mt-0.5 opacity-80">
+                                                <Coffee className="w-2.5 h-2.5 shrink-0" />
+                                                <span>{shift.breakStart}{shift.breakEnd ? '–' + shift.breakEnd : ''}</span>
+                                              </div>
+                                            )}
+                                            {shift.note && <div className="opacity-70 truncate max-w-[80px] mt-0.5 italic">{shift.note}</div>}
+                                          </div>
+                                          <button
+                                            onClick={() => handleDeleteShift(shift)}
+                                            className="opacity-0 group-hover/shift:opacity-100 transition-opacity text-primary-foreground/70 hover:text-primary-foreground mt-0.5 shrink-0"
+                                          >
+                                            <X className="w-3 h-3" />
+                                          </button>
+                                        </div>
+                                      ))}
+                                      {dayShifts.length === 0 && (
+                                        <button
+                                          onClick={() => {
+                                            setShiftEmployee(emp.id);
+                                            setShiftDate(dateStr);
+                                            setIsAddShiftOpen(true);
+                                          }}
+                                          className="w-full h-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity rounded-lg border-2 border-dashed border-muted-foreground/20 hover:border-primary/40 hover:bg-primary/5"
+                                        >
+                                          <Plus className="w-3 h-3 text-muted-foreground/40" />
+                                        </button>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            ))
+                          )}
                         </div>
+                      );
+                    })()}
+                  </CardContent>
+                </Card>
 
-                        <Separator />
+                {/* Schedule info card */}
+                <Card className="border-primary/20 bg-primary/5 border rounded-2xl">
+                  <CardContent className="p-4 flex items-start gap-3">
+                    <ShieldAlert className="w-5 h-5 text-primary mt-0.5 shrink-0" />
+                    <div className="text-sm">
+                      <p className="font-bold text-primary">Dienstplan-Sperre aktiv</p>
+                      <p className="text-muted-foreground">Mitarbeiter können sich am Terminal nur einstempeln, wenn sie für den heutigen Tag im Dienstplan eingetragen sind. Nicht eingeplante Mitarbeiter werden gesperrt.</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              </TabsContent>
 
-                        <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-                          <div>
-                            <p className="text-xs text-muted-foreground uppercase font-semibold">Monatlich</p>
-                            <p className="text-2xl font-black text-foreground">10 € <span className="text-sm font-normal text-muted-foreground">/ Monat</span></p>
+              <TabsContent value="billing" className="space-y-8">
+                <Card className="border-none shadow-xl rounded-2xl bg-white/90 max-w-2xl mx-auto">
+                  <CardHeader className="text-center p-8">
+                    <CreditCard className="w-12 h-12 text-primary mx-auto mb-4" />
+                    <CardTitle>Abo &amp; Abrechnung</CardTitle>
+                    <CardDescription>Verwalten Sie Ihre Pro-Funktionen und Ihr Abonnement.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="p-8 pt-0 space-y-8">
+                    {/* Current Plan Status */}
+                    <div className="p-6 border-2 border-dashed rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 bg-muted/20">
+                      <div className="space-y-1 text-center sm:text-left">
+                        <h3 className="font-bold text-lg">ZeitScan Pro Plan</h3>
+                        <p className="text-sm text-muted-foreground">Premium-Funktionen für Ihr Team</p>
+                      </div>
+                      {isFeatureActive ? (
+                        <Badge className="bg-green-100 text-green-700 border-none px-4 py-2">Trial: {trialDaysLeft} Tage übrig</Badge>
+                      ) : (
+                        <Badge className="bg-destructive/10 text-destructive border-none px-4 py-2">Trial abgelaufen</Badge>
+                      )}
+                    </div>
+
+                    {/* Subscribe / Manage Section */}
+                    <div className="space-y-4">
+                      <Card className="border-2 border-primary/20 bg-gradient-to-br from-primary/5 to-primary/10 rounded-2xl overflow-hidden">
+                        <CardContent className="p-6 space-y-6">
+                          <div className="flex items-start gap-4">
+                            <div className="p-3 bg-white rounded-xl shadow-sm shrink-0">
+                              <Sparkles className="w-6 h-6 text-primary" />
+                            </div>
+                            <div className="space-y-1">
+                              <h4 className="font-bold text-lg">ZeitScan Pro</h4>
+                              <p className="text-sm text-muted-foreground">Unbegrenzter Zugriff auf alle Funktionen, unbegrenzte Mitarbeiter, CSV-Exporte, Dienstplanung und mehr.</p>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3">
+                            {[
+                              'Unbegrenzte Mitarbeiter',
+                              'Terminal & QR-Codes',
+                              'CSV-Exporte & Berichte',
+                              'Dienstplanung',
+                              'Urlaub- & Krankheitsverwaltung',
+                              'Überstundenverwaltung',
+                            ].map(feature => (
+                              <div key={feature} className="flex items-center gap-2 text-sm">
+                                <div className="w-1.5 h-1.5 rounded-full bg-primary shrink-0" />
+                                <span className="text-muted-foreground">{feature}</span>
+                              </div>
+                            ))}
+                          </div>
+
+                          <Separator />
+
+                          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                            <div>
+                              <p className="text-xs text-muted-foreground uppercase font-semibold">Monatlich</p>
+                              <p className="text-2xl font-black text-foreground">10 € <span className="text-sm font-normal text-muted-foreground">/ Monat</span></p>
+                            </div>
+                            <Button
+                              size="lg"
+                              onClick={handleSubscribe}
+                              disabled={isCheckoutLoading}
+                              className="rounded-xl h-12 px-8 bg-green-600 hover:bg-green-700 text-white shadow-lg hover:shadow-xl transition-all gap-2 shrink-0"
+                            >
+                              {isCheckoutLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <CreditCard className="w-5 h-5" />}
+                              {isFeatureActive ? 'Jetzt abonnieren' : 'Pro Plan aktivieren'}
+                            </Button>
+                          </div>
+
+                          {isFeatureActive && (
+                            <p className="text-xs text-center text-muted-foreground">
+                              Abonnieren Sie jetzt — Ihre Testphase läuft nahtlos in das Abo über. Sichere Bezahlung über Stripe.
+                            </p>
+                          )}
+                        </CardContent>
+                      </Card>
+
+                      {/* Manage existing subscription */}
+                      <Card className="border rounded-2xl">
+                        <CardContent className="p-5 flex flex-col sm:flex-row items-center justify-between gap-4">
+                          <div className="text-sm text-muted-foreground text-center sm:text-left">
+                            <p className="font-medium text-foreground">Bestehendes Abo verwalten</p>
+                            <p>Rechnungen einsehen, Zahlungsmethode ändern oder Abo kündigen.</p>
                           </div>
                           <Button
-                            size="lg"
-                            onClick={handleSubscribe}
-                            disabled={isCheckoutLoading}
-                            className="rounded-xl h-12 px-8 bg-green-600 hover:bg-green-700 text-white shadow-lg hover:shadow-xl transition-all gap-2 shrink-0"
-                          >
-                            {isCheckoutLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <CreditCard className="w-5 h-5" />}
-                            {isFeatureActive ? 'Jetzt abonnieren' : 'Pro Plan aktivieren'}
-                          </Button>
-                        </div>
-
-                        {isFeatureActive && (
-                          <p className="text-xs text-center text-muted-foreground">
-                            Abonnieren Sie jetzt — Ihre Testphase läuft nahtlos in das Abo über. Sichere Bezahlung über Stripe.
-                          </p>
-                        )}
-                      </CardContent>
-                    </Card>
-
-                    {/* Manage existing subscription */}
-                    <Card className="border rounded-2xl">
-                      <CardContent className="p-5 flex flex-col sm:flex-row items-center justify-between gap-4">
-                        <div className="text-sm text-muted-foreground text-center sm:text-left">
-                          <p className="font-medium text-foreground">Bestehendes Abo verwalten</p>
-                          <p>Rechnungen einsehen, Zahlungsmethode ändern oder Abo kündigen.</p>
-                        </div>
-                        <Button
-                          variant="outline"
-                          className="rounded-xl shrink-0 gap-2"
-                          onClick={async () => {
-                            try {
-                              setIsCheckoutLoading(true);
-                              const res = await fetch('/api/customer-portal', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ email: impersonateAdmin?.email || adminData?.email || user?.email })
-                              });
-                              const data = await res.json();
-                              if (data.url) {
-                                window.location.href = data.url;
-                              } else {
-                                toast({ title: 'Hinweis', description: data.error || 'Kundenportal nicht verfügbar.', variant: 'destructive' });
+                            variant="outline"
+                            className="rounded-xl shrink-0 gap-2"
+                            onClick={async () => {
+                              try {
+                                setIsCheckoutLoading(true);
+                                const res = await fetch('/api/customer-portal', {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ email: impersonateAdmin?.email || adminData?.email || user?.email })
+                                });
+                                const data = await res.json();
+                                if (data.url) {
+                                  window.location.href = data.url;
+                                } else {
+                                  toast({ title: 'Hinweis', description: data.error || 'Kundenportal nicht verfügbar.', variant: 'destructive' });
+                                }
+                              } catch {
+                                toast({ title: 'Fehler', description: 'Verbindung zum Portal fehlgeschlagen.', variant: 'destructive' });
+                              } finally {
+                                setIsCheckoutLoading(false);
                               }
-                            } catch {
-                              toast({ title: 'Fehler', description: 'Verbindung zum Portal fehlgeschlagen.', variant: 'destructive' });
-                            } finally {
-                              setIsCheckoutLoading(false);
-                            }
-                          }}
-                          disabled={isCheckoutLoading}
-                        >
-                          {isCheckoutLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
-                          Kundenportal öffnen
-                        </Button>
-                      </CardContent>
-                    </Card>
-                  </div>
-
-                  {/* Danger Zone */}
-                  <div className="pt-8 border-t space-y-4">
-                    <div className="flex items-center gap-2 text-destructive font-bold">
-                      <LockIcon className="w-5 h-5" />
-                      <h4>Gefahrenzone</h4>
+                            }}
+                            disabled={isCheckoutLoading}
+                          >
+                            {isCheckoutLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
+                            Kundenportal öffnen
+                          </Button>
+                        </CardContent>
+                      </Card>
                     </div>
-                    <Card className="border-destructive/20 bg-destructive/5 rounded-2xl">
-                      <CardContent className="p-6 flex flex-col sm:flex-row items-center justify-between gap-4">
-                        <div className="text-sm text-muted-foreground text-center sm:text-left">
-                          Alle Mitarbeiter und deren Zeitprotokolle löschen.
-                        </div>
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button variant="destructive" className="rounded-xl h-11 px-6">
-                              Alle Daten unwiderruflich löschen
-                            </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent className="rounded-2xl">
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>Sind Sie absolut sicher?</AlertDialogTitle>
-                              <AlertDialogDescription>
-                                Diese Aktion kann nicht rückgängig gemacht werden. Alle Mitarbeiterprofile und deren gesamte Buchungshistorie werden dauerhaft gelöscht.
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel className="rounded-xl">Abbrechen</AlertDialogCancel>
-                              <AlertDialogAction onClick={handleDeleteAllData} className="bg-destructive text-destructive-foreground hover:bg-destructive/90 rounded-xl">
-                                Ja, alles löschen
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
-                      </CardContent>
-                    </Card>
-                  </div>
-                </CardContent>
-              </Card>
-            </TabsContent>
-          </Tabs>
+
+                    {/* Danger Zone */}
+                    <div className="pt-8 border-t space-y-4">
+                      <div className="flex items-center gap-2 text-destructive font-bold">
+                        <LockIcon className="w-5 h-5" />
+                        <h4>Gefahrenzone</h4>
+                      </div>
+                      <Card className="border-destructive/20 bg-destructive/5 rounded-2xl">
+                        <CardContent className="p-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+                          <div className="text-sm text-muted-foreground text-center sm:text-left">
+                            Alle Mitarbeiter und deren Zeitprotokolle löschen.
+                          </div>
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button variant="destructive" className="rounded-xl h-11 px-6">
+                                Alle Daten unwiderruflich löschen
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent className="rounded-2xl">
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Sind Sie absolut sicher?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  Diese Aktion kann nicht rückgängig gemacht werden. Alle Mitarbeiterprofile und deren gesamte Buchungshistorie werden dauerhaft gelöscht.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel className="rounded-xl">Abbrechen</AlertDialogCancel>
+                                <AlertDialogAction onClick={handleDeleteAllData} className="bg-destructive text-destructive-foreground hover:bg-destructive/90 rounded-xl">
+                                  Ja, alles löschen
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        </CardContent>
+                      </Card>
+                    </div>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+            </Tabs>
           )}
         </div>
       </div>
@@ -2472,21 +2550,21 @@ function DashboardContent() {
                   <div className="min-w-0">
                     <p className="font-bold text-sm truncate">{admin.email}</p>
                     <div className="text-xs text-muted-foreground flex items-center gap-2 mt-1">
-                       {admin.isPremium ? <Badge className="bg-green-100 text-green-700 hover:bg-green-100 border-none px-1 py-0 text-[10px]">Premium</Badge> : <Badge variant="outline" className="text-[10px] px-1 py-0">Basic</Badge>}
-                       <span className="truncate text-[10px]">Erstellt: {admin.createdAt ? format(parseISO(admin.createdAt), 'dd.MM.yyyy') : '-'}</span>
+                      {admin.isPremium ? <Badge className="bg-green-100 text-green-700 hover:bg-green-100 border-none px-1 py-0 text-[10px]">Premium</Badge> : <Badge variant="outline" className="text-[10px] px-1 py-0">Basic</Badge>}
+                      <span className="truncate text-[10px]">Erstellt: {admin.createdAt ? format(parseISO(admin.createdAt), 'dd.MM.yyyy') : '-'}</span>
                     </div>
                   </div>
-                  <Button 
-                    size="sm" 
-                    className="shrink-0 rounded-lg gap-1 min-w-[120px]" 
+                  <Button
+                    size="sm"
+                    className="shrink-0 rounded-lg gap-1 min-w-[120px]"
                     disabled={impersonateAdmin?.uid === admin.id || user?.uid === admin.id}
                     onClick={() => {
-                      setImpersonateAdmin({uid: admin.id, email: admin.email});
+                      setImpersonateAdmin({ uid: admin.id, email: admin.email });
                       setIsSupportDialogOpen(false);
-                      toast({title: "Fremdzugriff gestartet", description: `Sie sehen nun die Daten von ${admin.email}`});
+                      toast({ title: "Fremdzugriff gestartet", description: `Sie sehen nun die Daten von ${admin.email}` });
                     }}
                   >
-                    <ShieldAlert className="w-3 h-3" /> 
+                    <ShieldAlert className="w-3 h-3" />
                     {user?.uid === admin.id ? 'Mein Konto' : (impersonateAdmin?.uid === admin.id ? 'Aktiv' : 'Zugreifen')}
                   </Button>
                 </div>
@@ -2507,9 +2585,9 @@ function DashboardContent() {
             <DialogDescription>{qrCodeEmployee?.fullName}</DialogDescription>
           </DialogHeader>
           {qrCodeEmployee && (
-             <div className="p-4 bg-white rounded-xl shadow-sm border flex items-center justify-center">
-               <QRCodeSVG value={window.location.origin + '/ma/' + qrCodeEmployee.id} size={200} />
-             </div>
+            <div className="p-4 bg-white rounded-xl shadow-sm border flex items-center justify-center">
+              <QRCodeSVG value={window.location.origin + '/ma/' + qrCodeEmployee.id} size={200} />
+            </div>
           )}
           <p className="text-sm text-center text-muted-foreground mt-4">Mitarbeiter kann diesen Code mit der Smartphone-Kamera scannen, um die Web-App direkt zu öffnen und zu installieren.</p>
           <Button onClick={() => setQrCodeEmployee(null)} className="w-full rounded-xl">Schließen</Button>
@@ -2750,24 +2828,24 @@ function DashboardContent() {
                 <CalendarPlus className="w-4 h-4" /> Zeitraum-Abwesenheit buchen
               </h4>
               <p className="text-[10px] text-muted-foreground uppercase">Erfassen Sie Urlaub oder Krankheit über den Kalender.</p>
-              
+
               <div className="grid grid-cols-2 gap-2">
                 <div className="space-y-1">
                   <Label className="text-[10px]">Von</Label>
-                  <Input 
-                    type="date" 
-                    className="h-9 text-xs" 
-                    value={absenceStart} 
-                    onChange={(e) => setAbsenceStart(e.target.value)} 
+                  <Input
+                    type="date"
+                    className="h-9 text-xs"
+                    value={absenceStart}
+                    onChange={(e) => setAbsenceStart(e.target.value)}
                   />
                 </div>
                 <div className="space-y-1">
                   <Label className="text-[10px]">Bis</Label>
-                  <Input 
-                    type="date" 
-                    className="h-9 text-xs" 
-                    value={absenceEnd} 
-                    onChange={(e) => setAbsenceEnd(e.target.value)} 
+                  <Input
+                    type="date"
+                    className="h-9 text-xs"
+                    value={absenceEnd}
+                    onChange={(e) => setAbsenceEnd(e.target.value)}
                   />
                 </div>
               </div>
@@ -2787,11 +2865,11 @@ function DashboardContent() {
                   {absenceDaysCount} Tage
                 </div>
               </div>
-              
-              <Button 
-                variant="secondary" 
-                size="sm" 
-                className="w-full text-xs gap-2" 
+
+              <Button
+                variant="secondary"
+                size="sm"
+                className="w-full text-xs gap-2"
                 onClick={handleBookRangeAbsence}
                 disabled={absenceDaysCount <= 0}
               >
@@ -2816,18 +2894,18 @@ function DashboardContent() {
           <div className="space-y-4 py-4">
             <div className="space-y-2">
               <Label>Kommen</Label>
-              <Input 
-                type="datetime-local" 
-                value={editInTime} 
-                onChange={(e) => setEditInTime(e.target.value)} 
+              <Input
+                type="datetime-local"
+                value={editInTime}
+                onChange={(e) => setEditInTime(e.target.value)}
               />
             </div>
             <div className="space-y-2">
               <Label>Gehen</Label>
-              <Input 
-                type="datetime-local" 
-                value={editOutTime} 
-                onChange={(e) => setEditOutTime(e.target.value)} 
+              <Input
+                type="datetime-local"
+                value={editOutTime}
+                onChange={(e) => setEditOutTime(e.target.value)}
               />
             </div>
           </div>
@@ -2846,10 +2924,10 @@ function DashboardContent() {
           <div className="space-y-4 py-4">
             <div className="space-y-2">
               <Label>Datum</Label>
-              <Input 
-                type="date" 
-                value={logAbsenceDate} 
-                onChange={(e) => setLogAbsenceDate(e.target.value)} 
+              <Input
+                type="date"
+                value={logAbsenceDate}
+                onChange={(e) => setLogAbsenceDate(e.target.value)}
               />
             </div>
             <div className="space-y-2">
@@ -2941,7 +3019,7 @@ function DashboardContent() {
                       <Clock className="w-4 h-4 text-violet-600" />
                       <div>
                         <p className="text-[10px] text-muted-foreground uppercase font-semibold">Nettoarbeitszeit</p>
-                        <p className="font-black text-slate-800">{h}h {String(m).padStart(2,'0')}min</p>
+                        <p className="font-black text-slate-800">{h}h {String(m).padStart(2, '0')}min</p>
                       </div>
                     </div>
                     {brk > 0 && <div className="text-right"><p className="text-xs text-muted-foreground">Pause</p><p className="text-sm font-bold text-amber-600">{brk} min</p></div>}
@@ -3035,90 +3113,90 @@ function DashboardContent() {
                   if (logsFilter === 'all') return true;
                   return logsFilter === 'month' ? (isAfter(date, startOfMonth(now)) || isSameDay(date, startOfMonth(now))) : (isAfter(date, startOfYear(now)) || isSameDay(date, startOfYear(now)));
                 })
-                .sort((a, b) => b.clockInTime.localeCompare(a.clockInTime))
-                .map(entry => {
-                  const clockIn = parseISO(entry.clockInTime);
-                  const clockOut = entry.clockOutTime ? parseISO(entry.clockOutTime) : null;
-                  const entryType = entry.entryType || 'WORK';
-                  
-                  let diff = 0;
-                  if (entryType === 'WORK') {
-                    diff = clockOut ? differenceInMinutes(clockOut, clockIn) / 60 : 0;
-                  } else {
-                    const days = clockOut ? differenceInDays(clockOut, clockIn) + 1 : 1;
-                    diff = days * 8;
-                  }
+                  .sort((a, b) => b.clockInTime.localeCompare(a.clockInTime))
+                  .map(entry => {
+                    const clockIn = parseISO(entry.clockInTime);
+                    const clockOut = entry.clockOutTime ? parseISO(entry.clockOutTime) : null;
+                    const entryType = entry.entryType || 'WORK';
 
-                  const isMultiDay = clockOut && !isSameDay(clockIn, clockOut);
+                    let diff = 0;
+                    if (entryType === 'WORK') {
+                      diff = clockOut ? differenceInMinutes(clockOut, clockIn) / 60 : 0;
+                    } else {
+                      const days = clockOut ? differenceInDays(clockOut, clockIn) + 1 : 1;
+                      diff = days * 8;
+                    }
 
-                  // Look up planned break from schedule
-                  const entryDateKey = format(clockIn, 'yyyy-MM-dd');
-                  const plannedBreakEntry = entryType === 'WORK'
-                    ? (schedules || []).find(s => s.employeeId === viewingLogsEmployee?.id && s.date === entryDateKey && s.breakStart)
-                    : null;
+                    const isMultiDay = clockOut && !isSameDay(clockIn, clockOut);
 
-                  return (
-                    <TableRow key={entry.id} className={entryType === 'VACATION' ? 'bg-blue-50/30' : entryType === 'SICK' ? 'bg-orange-50/30' : ''}>
-                      <TableCell className="font-medium">
-                        <div className="flex items-center gap-2">
-                          {isMultiDay ? (
-                            <div className="flex items-center gap-1">
-                              <span>{format(clockIn, 'dd.MM.')}</span>
-                              <ArrowRight className="w-2 h-2" />
-                              <span>{format(clockOut!, 'dd.MM.yyyy')}</span>
+                    // Look up planned break from schedule
+                    const entryDateKey = format(clockIn, 'yyyy-MM-dd');
+                    const plannedBreakEntry = entryType === 'WORK'
+                      ? (schedules || []).find(s => s.employeeId === viewingLogsEmployee?.id && s.date === entryDateKey && s.breakStart)
+                      : null;
+
+                    return (
+                      <TableRow key={entry.id} className={entryType === 'VACATION' ? 'bg-blue-50/30' : entryType === 'SICK' ? 'bg-orange-50/30' : ''}>
+                        <TableCell className="font-medium">
+                          <div className="flex items-center gap-2">
+                            {isMultiDay ? (
+                              <div className="flex items-center gap-1">
+                                <span>{format(clockIn, 'dd.MM.')}</span>
+                                <ArrowRight className="w-2 h-2" />
+                                <span>{format(clockOut!, 'dd.MM.yyyy')}</span>
+                              </div>
+                            ) : (
+                              format(clockIn, 'dd.MM.yyyy', { locale: de })
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          {entryType === 'WORK' ? (
+                            <Badge variant="outline">Arbeit</Badge>
+                          ) : entryType === 'VACATION' ? (
+                            <Badge className="bg-blue-100 text-blue-700 hover:bg-blue-100 border-none">Urlaub</Badge>
+                          ) : (
+                            <Badge className="bg-orange-100 text-orange-700 hover:bg-orange-100 border-none">Krank</Badge>
+                          )}
+                        </TableCell>
+                        <TableCell>{entryType === 'WORK' ? format(clockIn, 'HH:mm') : '-'}</TableCell>
+                        <TableCell>
+                          {entryType === 'WORK' ? (
+                            clockOut ? format(clockOut, 'HH:mm') : <Badge variant="secondary">Offen</Badge>
+                          ) : '-'}
+                        </TableCell>
+                        <TableCell className="font-mono">{diff.toFixed(2)}h</TableCell>
+                        <TableCell>
+                          {plannedBreakEntry ? (
+                            <div className="flex items-center gap-1 text-amber-700">
+                              <Coffee className="w-3 h-3 shrink-0" />
+                              <span className="text-xs font-medium">
+                                {plannedBreakEntry.breakStart}{plannedBreakEntry.breakEnd ? '–' + plannedBreakEntry.breakEnd : ''}
+                              </span>
                             </div>
                           ) : (
-                            format(clockIn, 'dd.MM.yyyy', { locale: de })
+                            <span className="text-muted-foreground/40 text-xs">—</span>
                           )}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        {entryType === 'WORK' ? (
-                          <Badge variant="outline">Arbeit</Badge>
-                        ) : entryType === 'VACATION' ? (
-                          <Badge className="bg-blue-100 text-blue-700 hover:bg-blue-100 border-none">Urlaub</Badge>
-                        ) : (
-                          <Badge className="bg-orange-100 text-orange-700 hover:bg-orange-100 border-none">Krank</Badge>
-                        )}
-                      </TableCell>
-                      <TableCell>{entryType === 'WORK' ? format(clockIn, 'HH:mm') : '-'}</TableCell>
-                      <TableCell>
-                        {entryType === 'WORK' ? (
-                          clockOut ? format(clockOut, 'HH:mm') : <Badge variant="secondary">Offen</Badge>
-                        ) : '-'}
-                      </TableCell>
-                      <TableCell className="font-mono">{diff.toFixed(2)}h</TableCell>
-                      <TableCell>
-                        {plannedBreakEntry ? (
-                          <div className="flex items-center gap-1 text-amber-700">
-                            <Coffee className="w-3 h-3 shrink-0" />
-                            <span className="text-xs font-medium">
-                              {plannedBreakEntry.breakStart}{plannedBreakEntry.breakEnd ? '–' + plannedBreakEntry.breakEnd : ''}
-                            </span>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex gap-1 justify-end">
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-primary" onClick={() => {
+                              setEditingTimeEntry(entry);
+                              setEditInTime(format(parseISO(entry.clockInTime), "yyyy-MM-dd'T'HH:mm"));
+                              setEditOutTime(entry.clockOutTime ? format(parseISO(entry.clockOutTime), "yyyy-MM-dd'T'HH:mm") : '');
+                            }}>
+                              <Pencil className="w-4 h-4" />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => {
+                              if (confirm('Eintrag löschen?')) deleteDocumentNonBlocking(doc(firestore, 'timeEntries', entry.id));
+                            }}>
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
                           </div>
-                        ) : (
-                          <span className="text-muted-foreground/40 text-xs">—</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex gap-1 justify-end">
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-primary" onClick={() => {
-                            setEditingTimeEntry(entry);
-                            setEditInTime(format(parseISO(entry.clockInTime), "yyyy-MM-dd'T'HH:mm"));
-                            setEditOutTime(entry.clockOutTime ? format(parseISO(entry.clockOutTime), "yyyy-MM-dd'T'HH:mm") : '');
-                          }}>
-                            <Pencil className="w-4 h-4" />
-                          </Button>
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => {
-                            if (confirm('Eintrag löschen?')) deleteDocumentNonBlocking(doc(firestore, 'timeEntries', entry.id));
-                          }}>
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
               </TableBody>
             </Table>
           </div>

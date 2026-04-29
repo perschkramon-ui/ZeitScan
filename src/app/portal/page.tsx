@@ -121,6 +121,22 @@ function PortalContent() {
 
   const { data: adminData } = useDoc<AdminUser>(adminDocQuery);
 
+  // Auto-report client IP to admin doc (for remote location-lock setup)
+  useEffect(() => {
+    if (!firestore || !adminId || !user) return;
+    fetch('/api/get-ip')
+      .then(res => res.json())
+      .then(data => {
+        if (data.ip && data.ip !== 'unknown') {
+          updateDocumentNonBlocking(doc(firestore, 'adminUsers', adminId), {
+            lastClientIp: data.ip,
+            lastClientIpAt: new Date().toISOString(),
+          });
+        }
+      })
+      .catch(() => {});
+  }, [firestore, adminId, user]);
+
   useEffect(() => {
     if (!selectedId || !firestore || !adminId || !user) {
       setActiveEntryId(null);

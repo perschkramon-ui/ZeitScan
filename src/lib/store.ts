@@ -53,6 +53,10 @@ export type AdminUser = {
   locationLockEnabled?: boolean;
   /** The public IP of the office network (saved by admin) */
   locationIp?: string;
+  /** Last IP reported by a client (employee portal/MA app) visiting from the customer's network */
+  lastClientIp?: string;
+  /** ISO timestamp of when lastClientIp was reported */
+  lastClientIpAt?: string;
 };
 
 export type ScheduleEntry = {

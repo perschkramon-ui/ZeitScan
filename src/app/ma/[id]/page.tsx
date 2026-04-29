@@ -138,6 +138,22 @@ function MAAppContent({ id }: { id: string }) {
     fetchAdmin();
   }, [firestore, employee]);
 
+  // Auto-report client IP to admin doc (for remote location-lock setup)
+  useEffect(() => {
+    if (!firestore || !employee) return;
+    fetch('/api/get-ip')
+      .then(res => res.json())
+      .then(data => {
+        if (data.ip && data.ip !== 'unknown') {
+          updateDocumentNonBlocking(doc(firestore, 'adminUsers', employee.adminId), {
+            lastClientIp: data.ip,
+            lastClientIpAt: new Date().toISOString(),
+          });
+        }
+      })
+      .catch(() => {});
+  }, [firestore, employee]);
+
   // 3. Listen to Time Entries (Status & Dashboard)
   useEffect(() => {
     if (!firestore || !employee || !auth?.currentUser) return;
