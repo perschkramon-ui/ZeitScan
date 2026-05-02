@@ -424,8 +424,14 @@ function DashboardContent() {
   }, [user, adminData, firestore, activeAdminUid, impersonateAdmin]);
 
   // Trial-Berechnung: trialDays (default 30) ab trialStartedAt
+  // Obstgärtla (Testkunde) hat unbegrenzten Zugang
+  const isObstgaertlaAdmin = adminData?.email === OBSTGAERTLA_EMAIL || (impersonateAdmin && allAdmins?.find(a => a.id === impersonateAdmin.uid)?.email === OBSTGAERTLA_EMAIL);
   const { isFeatureActive, trialDaysLeft, trialExpired } = useMemo(() => {
     if (!adminData) return { isFeatureActive: false, trialDaysLeft: 0, trialExpired: false };
+    // Obstgärtla: unbegrenzter Zugang
+    if (adminData.email === OBSTGAERTLA_EMAIL) return { isFeatureActive: true, trialDaysLeft: 999, trialExpired: false };
+    // Premium-Abonnent (via Stripe)
+    if (adminData.isPremium && !adminData.trialStartedAt) return { isFeatureActive: true, trialDaysLeft: 0, trialExpired: false };
     if (!adminData.trialStartedAt) return { isFeatureActive: adminData.isPremium, trialDaysLeft: 0, trialExpired: false };
     const start = new Date(adminData.trialStartedAt);
     const now = new Date();
@@ -438,7 +444,7 @@ function DashboardContent() {
     if (expired && adminData.isPremium && firestore && activeAdminUid && !impersonateAdmin) {
       updateDocumentNonBlocking(doc(firestore, 'adminUsers', activeAdminUid), { isPremium: false });
     }
-    return { isFeatureActive: !expired, trialDaysLeft: daysLeft, trialExpired: expired };
+    return { isFeatureActive: !expired || adminData.isPremium, trialDaysLeft: daysLeft, trialExpired: expired && !adminData.isPremium };
   }, [adminData, firestore, activeAdminUid, impersonateAdmin]);
 
   const employeesQuery = useMemoFirebase(() => {
@@ -1473,7 +1479,26 @@ function DashboardContent() {
     toast({ title: "Ausgestempelt", description: `${emp.fullName} wurde ausgestempelt.` });
   };
 
-  // Stripe-Checkout entfernt — Trial wird intern verwaltet
+  // Stripe Checkout & Billing
+  // Stripe Billing Portal (Abo verwalten)
+  const handleManageBilling = async () => {
+    if (!user?.email) return;
+    try {
+      const res = await fetch('/api/customer-portal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: user.email }),
+      });
+      const data = await res.json();
+      if (data.url) {
+        window.location.href = data.url;
+      } else {
+        toast({ title: 'Hinweis', description: data.error || 'Kein aktives Abo gefunden.', variant: 'destructive' });
+      }
+    } catch {
+      toast({ title: 'Fehler', description: 'Konnte Billing-Portal nicht öffnen.', variant: 'destructive' });
+    }
+  };
 
   const handleExecuteCustomExport = () => {
     const customDate = setYear(setMonth(new Date(), Number(customExportMonth)), Number(customExportYear));
@@ -1530,13 +1555,30 @@ function DashboardContent() {
                   Abmelden
                 </Button>
                 {isFeatureActive ? (
-                  <Badge className="bg-gradient-to-r from-amber-400 to-orange-500 border-none px-4 py-1.5 rounded-full shadow-md gap-2 text-white">
-                    <Sparkles className="w-4 h-4" /> Trial: {trialDaysLeft} Tage übrig
-                  </Badge>
+                  trialDaysLeft > 0 && trialDaysLeft < 999 ? (
+                    <Badge className="bg-gradient-to-r from-amber-400 to-orange-500 border-none px-4 py-1.5 rounded-full shadow-md gap-2 text-white">
+                      <Sparkles className="w-4 h-4" /> Trial: {trialDaysLeft} Tage übrig
+                    </Badge>
+                  ) : trialDaysLeft === 999 ? null : (
+                    <Badge className="bg-gradient-to-r from-emerald-400 to-green-500 border-none px-4 py-1.5 rounded-full shadow-md gap-2 text-white">
+                      <Sparkles className="w-4 h-4" /> Premium aktiv
+                    </Badge>
+                  )
                 ) : (
-                  <Badge variant="outline" className="px-4 py-1.5 rounded-full shadow-sm gap-2 border-destructive/30 bg-destructive/5 text-destructive">
-                    <AlertTriangle className="w-4 h-4" /> Trial abgelaufen
-                  </Badge>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className="px-4 py-1.5 rounded-full shadow-sm gap-2 border-destructive/30 bg-destructive/5 text-destructive">
+                      <AlertTriangle className="w-4 h-4" /> Trial abgelaufen
+                    </Badge>
+                    <Button
+                      size="sm"
+                      className="rounded-full bg-gradient-to-r from-primary to-blue-600 text-white shadow-lg hover:shadow-xl transition-all gap-2"
+                      onClick={handleSubscribe}
+                      disabled={isCheckoutLoading}
+                    >
+                      {isCheckoutLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                      Jetzt upgraden
+                    </Button>
+                  </div>
                 )}
               </div>
             </div>
