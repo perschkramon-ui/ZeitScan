@@ -1,43 +1,22 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { app } from "@/lib/firebase";
-import { getAuth, onAuthStateChanged, signInAnonymously } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 
+/**
+ * Legacy terminal route — redirects to the Portal page.
+ * The actual terminal functionality lives at /portal?adminId=...
+ */
 export default function TerminalPage() {
-  const [db, setDb] = useState(null);
+  const router = useRouter();
 
   useEffect(() => {
-    const auth = getAuth(app);
-
-    const unsub = onAuthStateChanged(auth, (user) => {
-      if (!user) {
-        console.log("No user → signing in anonymously...");
-        signInAnonymously(auth).catch(console.error);
-        return;
-      }
-
-      console.log("Auth ready:", user.uid);
-
-      const firestore = getFirestore(app);
-      setDb(firestore);
-
-      loadEmployees(firestore);
-    });
-
-    return () => unsub();
-  }, []);
+    router.replace("/");
+  }, [router]);
 
   return (
-    <div>
-      <h1>Terminal</h1>
-      {/* UI kommt hier */}
+    <div className="min-h-screen flex items-center justify-center bg-[#E8EAEF]">
+      <p className="text-muted-foreground">Weiterleitung...</p>
     </div>
   );
-}
-
-function loadEmployees(db) {
-  console.log("Loading employees with DB:", db);
-  // hier deine Firestore-Abfrage
 }

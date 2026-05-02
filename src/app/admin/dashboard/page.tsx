@@ -1089,6 +1089,20 @@ function DashboardContent() {
       toast({ title: "Fehler", description: "Ende muss nach dem Start liegen.", variant: "destructive" });
       return;
     }
+    // Duplicate check: warn if work entries already exist for this employee + date
+    if (timeEntries) {
+      const existingForDate = timeEntries.filter(e =>
+        e.employeeId === manualWorkEmployee.id &&
+        (!e.entryType || e.entryType === 'WORK') &&
+        format(parseISO(e.clockInTime), 'yyyy-MM-dd') === manualWorkDate
+      );
+      if (existingForDate.length > 0) {
+        const proceed = window.confirm(
+          `Für ${manualWorkEmployee.fullName} existiert am ${format(clockIn, 'dd.MM.yyyy', { locale: de })} bereits ein Arbeitseintrag.\n\nTrotzdem nachtragen?`
+        );
+        if (!proceed) return;
+      }
+    }
     const breakMins = parseInt(manualWorkBreak) || 0;
     if (breakMins > 0) {
       const totalMins = (clockOut.getTime() - clockIn.getTime()) / 60000;

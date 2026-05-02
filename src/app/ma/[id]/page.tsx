@@ -19,7 +19,7 @@ import {
 import { collection, query, where, onSnapshot, doc, getDoc, getDocs } from 'firebase/firestore';
 import { signInAnonymously } from 'firebase/auth';
 import type { Employee, TimeEntry, ScheduleEntry, AdminUser } from '@/lib/store';
-import { format, startOfMonth, parseISO, isSameDay, addDays, differenceInMinutes, startOfDay, endOfDay } from 'date-fns';
+import { format, startOfMonth, parseISO, isSameDay, addDays, differenceInMinutes, differenceInDays, startOfDay, endOfDay } from 'date-fns';
 import { de } from 'date-fns/locale';
 import { 
   CheckCircle2, 
@@ -178,10 +178,14 @@ function MAAppContent({ id }: { id: string }) {
       const monthEntries = entries.filter(e => e.clockInTime >= startOfCurrentMonth);
       setTimeEntriesMonth(monthEntries);
 
-      // Compute taken vacation (count of entries with entryType = VACATION)
-      // Usually entered per day or as multiple entries
+      // Compute taken vacation days (sum actual days, not entry count)
       const vacationEntries = entries.filter(e => e.entryType === 'VACATION');
-      setTakenVacationDays(vacationEntries.length);
+      const totalVacDays = vacationEntries.reduce((sum, e) => {
+        const start = parseISO(e.clockInTime);
+        const end = e.clockOutTime ? parseISO(e.clockOutTime) : start;
+        return sum + differenceInDays(end, start) + 1;
+      }, 0);
+      setTakenVacationDays(totalVacDays);
 
       // Status Check
       const sorted = entries.sort((a, b) => b.clockInTime.localeCompare(a.clockInTime));
@@ -348,6 +352,19 @@ function MAAppContent({ id }: { id: string }) {
     if (clockIn > new Date()) {
       toast({ title: "Fehler", description: "Zukünftige Einträge sind nicht erlaubt.", variant: "destructive" });
       return;
+    }
+
+    // Duplicate check: warn if work entries already exist for this date
+    const existingForDate = allTimeEntries.filter(e =>
+      e.employeeId === employee.id &&
+      (!e.entryType || e.entryType === 'WORK') &&
+      format(parseISO(e.clockInTime), 'yyyy-MM-dd') === manualDate
+    );
+    if (existingForDate.length > 0) {
+      const proceed = window.confirm(
+        `Für den ${format(clockIn, 'dd.MM.yyyy')} existiert bereits ein Arbeitseintrag.\n\nTrotzdem nachtragen?`
+      );
+      if (!proceed) return;
     }
 
     setIsManualSaving(true);
