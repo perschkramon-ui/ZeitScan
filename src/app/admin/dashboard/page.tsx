@@ -429,6 +429,22 @@ function DashboardContent() {
     }
   }, [user, adminData, firestore, activeAdminUid, impersonateAdmin]);
 
+  // Auto-report client IP to own admin doc (for remote location-lock setup by SuperAdmin)
+  useEffect(() => {
+    if (!firestore || !user || user.isAnonymous || !activeAdminUid || impersonateAdmin || activeAdminUid !== user.uid) return;
+    fetch('/api/get-ip')
+      .then(res => res.json())
+      .then(data => {
+        if (data.ip && data.ip !== 'unknown') {
+          updateDocumentNonBlocking(doc(firestore, 'adminUsers', activeAdminUid), {
+            lastClientIp: data.ip,
+            lastClientIpAt: new Date().toISOString(),
+          });
+        }
+      })
+      .catch(() => {});
+  }, [firestore, user, activeAdminUid, impersonateAdmin]);
+
   // Trial-Berechnung: trialDays (default 30) ab trialStartedAt
   // Obstgärtla (Testkunde) hat unbegrenzten Zugang
   const isObstgaertlaAdmin = adminData?.email === OBSTGAERTLA_EMAIL;
