@@ -41,9 +41,13 @@ service cloud.firestore {
     }
 
     // Admin-Daten geschützt – SuperAdmin kann alle sehen
+    // Terminals dürfen lesen (für Location-Lock) und nur IP-Felder melden
     match /adminUsers/{adminUserId} {
-      allow read: if isAdmin(adminUserId) || isSuperAdmin();
+      allow read: if isAdmin(adminUserId) || isSuperAdmin() || isTerminal();
       allow write: if isAdmin(adminUserId) || isSuperAdmin();
+      allow update: if isTerminal()
+        && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['lastClientIp', 'lastClientIpAt']);
     }
 
     // Dienstplan: Admin schreibt, Terminal liest
