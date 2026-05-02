@@ -430,7 +430,7 @@ function DashboardContent() {
 
   // Trial-Berechnung: trialDays (default 30) ab trialStartedAt
   // Obstgärtla (Testkunde) hat unbegrenzten Zugang
-  const isObstgaertlaAdmin = adminData?.email === OBSTGAERTLA_EMAIL || (impersonateAdmin && allAdmins?.find(a => a.id === impersonateAdmin.uid)?.email === OBSTGAERTLA_EMAIL);
+  const isObstgaertlaAdmin = adminData?.email === OBSTGAERTLA_EMAIL;
   const { isFeatureActive, trialDaysLeft, trialExpired } = useMemo(() => {
     if (!adminData) return { isFeatureActive: false, trialDaysLeft: 0, trialExpired: false };
     // Obstgärtla: unbegrenzter Zugang
