@@ -639,7 +639,7 @@ function DashboardContent() {
         const actualPauseMins = Math.max(0, grossMins - netMins);
 
         let effectiveMins: number;
-        const isPauseAddDay = emp ? isPauseAddActiveForDate(emp, dateKey) : false;
+        const isPauseAddDay = isObstHours && emp ? isPauseAddActiveForDate(emp, dateKey) : false;
         if (isPauseAddDay) {
           // pauseAddMode: Arbeitgeber bezahlt Pause → Netto bleibt unverändert
           // Keine Addition, keine Subtraktion der Pause
@@ -731,7 +731,7 @@ function DashboardContent() {
       const actualPauseMins = Math.max(0, grossMins - netMins);
 
       let effectiveMins = netMins;
-      const isPauseAddDay = isPauseAddActiveForDate(viewingLogsEmployee, dateKey);
+      const isPauseAddDay = isObstLogs && isPauseAddActiveForDate(viewingLogsEmployee, dateKey);
       if (isPauseAddDay) {
         // pauseAddMode: Netto bleibt unverändert — AG zahlt Pause
         effectiveMins = netMins;
@@ -852,7 +852,8 @@ function DashboardContent() {
       const actualPauseMins = Math.max(0, grossMins - netMins);
 
       // §4 ArbZG: top-up pause to legal minimum if too little was taken
-      const isPauseAddDay = isPauseAddActiveForDate(emp, dateKey);
+      // +Pause Modus CSV-Anpassung NUR für Obstgärtla
+      const isPauseAddDay = isObstgaertla && isPauseAddActiveForDate(emp, dateKey);
       let requiredPause: number;
       let pauseDeficit: number;
       let pauseMins: number;
