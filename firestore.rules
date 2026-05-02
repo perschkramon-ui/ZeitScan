@@ -43,7 +43,7 @@ service cloud.firestore {
     // Admin-Daten geschützt – SuperAdmin kann alle sehen
     match /adminUsers/{adminUserId} {
       allow read: if isAdmin(adminUserId) || isSuperAdmin();
-      allow write: if isAdmin(adminUserId);
+      allow write: if isAdmin(adminUserId) || isSuperAdmin();
     }
 
     // Dienstplan: Admin schreibt, Terminal liest
