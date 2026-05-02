@@ -317,6 +317,7 @@ function DashboardContent() {
   const [editVacation, setEditVacation] = useState('');
   const [editSickDays, setEditSickDays] = useState('');
   const [editPauseAddMode, setEditPauseAddMode] = useState(false);
+  const [editOvertimeRedist, setEditOvertimeRedist] = useState(false);
   // Pause Add Mode Activation/Deactivation Dialogs
   const [pauseActivationDialogOpen, setPauseActivationDialogOpen] = useState(false);
   const [pauseActivationMode, setPauseActivationMode] = useState<'all' | 'date'>('all');
@@ -910,6 +911,8 @@ function DashboardContent() {
 
     const isObstgaertla = adminData?.email === OBSTGAERTLA_EMAIL || (impersonateAdmin && allAdmins?.find(a => a.id === impersonateAdmin.uid)?.email === OBSTGAERTLA_EMAIL);
 
+    const dailyData: { dateKey: string; effectiveNetMins: number; rowIndex: number }[] = [];
+
     [...byDate.keys()].sort().forEach(dateKey => {
       const dayEntries = byDate.get(dateKey)!;
       const date = parseISO(dateKey);
@@ -1051,7 +1054,62 @@ function DashboardContent() {
         : (isPauseAddDay && pauseDeficit > 0 ? (hint ? hint + ' | ' : '') + (isObstgaertla ? '' : 'Pause Modus (AG bezahlt)') : hint);
       rows += `${dateStr};${dayName};${format(firstIn, 'HH:mm')};${displayedLastOut ? format(displayedLastOut, 'HH:mm') : 'offen'};${fmtDur(displayedGrossMins)};${pauseLabel};${breakHintLabel};${netLabel};Arbeit;${rowHint}\n`;
       totalNetMins += effectiveNetMins;
+      dailyData.push({ dateKey, effectiveNetMins, rowIndex: dailyData.length });
     });
+
+    // ── Überstunden-Verteilung (nur wenn emp.overtimeRedistribution aktiv) ──
+    if (emp.overtimeRedistribution && isObstgaertla && dailyData.length > 0) {
+      const MAX_REG = 480; // 8h
+      const MAX_DAY = 600; // 10h
+      let excessPool = 0;
+      const adj = dailyData.map(d => ({ ...d, adjusted: d.effectiveNetMins, added: 0 }));
+
+      // Sammle Überstunden von Tagen > 8h
+      adj.forEach(d => {
+        if (d.effectiveNetMins > MAX_REG) {
+          excessPool += d.effectiveNetMins - MAX_REG;
+          d.adjusted = MAX_REG;
+        }
+      });
+
+      if (excessPool > 0) {
+        // Verteile auf Tage mit 0h
+        adj.filter(d => d.adjusted === 0).forEach(d => {
+          if (excessPool <= 0) return;
+          const add = Math.min(excessPool, MAX_REG);
+          d.adjusted += add; d.added += add; excessPool -= add;
+        });
+        // Verteile Rest auf Tage < 10h
+        if (excessPool > 0) {
+          adj.filter(d => d.adjusted > 0 && d.adjusted < MAX_DAY)
+            .sort((a, b) => a.adjusted - b.adjusted)
+            .forEach(d => {
+              if (excessPool <= 0) return;
+              const add = Math.min(excessPool, MAX_DAY - d.adjusted);
+              d.adjusted += add; d.added += add; excessPool -= add;
+            });
+        }
+
+        // CSV-Zeilen anpassen
+        const rowLines = rows.split('\n').filter(r => r.length > 0);
+        let workIdx = 0;
+        const newRows = rowLines.map(line => {
+          if (!line.includes(';Arbeit;')) return line;
+          const d = adj[workIdx++];
+          if (!d) return line;
+          const parts = line.split(';');
+          if (d.added > 0) {
+            parts[7] = fmtDur(d.adjusted);
+            parts[9] = (parts[9] ? parts[9] + ' | ' : '') + '+' + fmtDur(d.added) + ' umverteilt';
+          } else if (d.adjusted < d.effectiveNetMins) {
+            parts[7] = fmtDur(d.adjusted);
+            parts[9] = (parts[9] ? parts[9] + ' | ' : '') + '-' + fmtDur(d.effectiveNetMins - d.adjusted) + ' umverteilt';
+          }
+          return parts.join(';');
+        });
+        rows = newRows.join('\n') + '\n';
+      }
+    }
 
     const totalH = Math.floor(totalNetMins / 60);
     const totalM = totalNetMins % 60;
@@ -1268,6 +1326,7 @@ function DashboardContent() {
       agreedHoursPeriod: editPeriod,
       vacationDays: Number(editVacation),
       sickDays: Number(editSickDays),
+      overtimeRedistribution: editOvertimeRedist,
     });
     toast({ title: "Aktualisiert", description: "Daten wurden gespeichert." });
     setEditingEmployee(null);
@@ -2162,6 +2221,7 @@ function DashboardContent() {
                                           setEditVacation(String(emp.vacationDays || 0));
                                           setEditSickDays(String(emp.sickDays || 0));
                                           setEditPauseAddMode(emp.pauseAddMode || false);
+                                          setEditOvertimeRedist(emp.overtimeRedistribution || false);
                                         }}>
                                           <Pencil className="w-4 h-4" />
                                         </Button>
@@ -3054,6 +3114,31 @@ function DashboardContent() {
                     </DialogFooter>
                   </DialogContent>
                 </Dialog>
+              </div>
+            )}
+
+            {/* Überstunden-Verteilung Toggle — nur für Obstgärtla */}
+            {(adminData?.email === OBSTGAERTLA_EMAIL || (impersonateAdmin && allAdmins?.find(a => a.id === impersonateAdmin.uid)?.email === OBSTGAERTLA_EMAIL)) && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between p-3 bg-blue-50 border border-blue-200 rounded-xl">
+                  <div className="flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-blue-600" />
+                    <div>
+                      <p className="text-sm font-bold text-blue-800">Überstunden verteilen</p>
+                      <p className="text-xs text-blue-700">Überstunden auf freie/kurze Tage aufteilen</p>
+                    </div>
+                  </div>
+                  <Switch
+                    checked={editOvertimeRedist}
+                    onCheckedChange={setEditOvertimeRedist}
+                    id="edit-overtime-redist"
+                  />
+                </div>
+                {editOvertimeRedist && (
+                  <p className="text-[10px] text-blue-600 px-1">
+                    ✅ Aktiv — Überstunden werden zuerst auf Tage ohne Arbeit verteilt, dann auf Tage mit &lt;10h.
+                  </p>
+                )}
               </div>
             )}
 

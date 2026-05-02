@@ -20,6 +20,8 @@ export type Employee = {
   pauseAddModeActivatedAt?: string | null;
   /** ISO date string: bis wann der pauseAddMode gilt (nur bei Deaktivierung mit Zeitraum) */
   pauseAddModeDeactivatedAt?: string | null;
+  /** Obstgärtla special: Überstunden werden auf freie/kurze Tage verteilt */
+  overtimeRedistribution?: boolean;
   createdAt: string;
 };
 
