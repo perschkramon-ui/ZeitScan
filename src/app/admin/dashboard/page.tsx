@@ -1058,7 +1058,7 @@ function DashboardContent() {
     });
 
     // ── Überstunden-Verteilung (nur wenn emp.overtimeRedistribution aktiv) ──
-    if (emp.overtimeRedistribution && isObstgaertla && dailyData.length > 0) {
+    if (emp.overtimeRedistribution && dailyData.length > 0) {
       const MAX_REG = 480; // 8h
       const MAX_DAY = 600; // 10h
       let excessPool = 0;
@@ -3117,8 +3117,8 @@ function DashboardContent() {
               </div>
             )}
 
-            {/* Überstunden-Verteilung Toggle — nur für Obstgärtla */}
-            {(adminData?.email === OBSTGAERTLA_EMAIL || (impersonateAdmin && allAdmins?.find(a => a.id === impersonateAdmin.uid)?.email === OBSTGAERTLA_EMAIL)) && (
+            {/* Überstunden-Verteilung Toggle */}
+            {(
               <div className="space-y-2">
                 <div className="flex items-center justify-between p-3 bg-blue-50 border border-blue-200 rounded-xl">
                   <div className="flex items-center gap-2">
