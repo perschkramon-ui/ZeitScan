@@ -120,7 +120,9 @@ import {
   UtensilsCrossed,
   Wifi,
   MapPin,
-  ShieldCheck
+  ShieldCheck,
+  Settings2,
+  Moon
 } from 'lucide-react';
 import {
   startOfWeek,
@@ -386,6 +388,9 @@ function DashboardContent() {
 
   // Location Lock State
   const [isLocationSaving, setIsLocationSaving] = useState(false);
+
+  // Settings Dialog State
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   const isSuperAdmin = user?.email === 'perschkramon@gmail.com';
   const [impersonateAdmin, setImpersonateAdmin] = useState<{ uid: string, email: string } | null>(null);
@@ -664,6 +669,117 @@ function DashboardContent() {
 
     return map;
   }, [timeEntries, period, isFeatureActive, adminData, employees, schedules]);
+
+  // ── Überstunden-Berechnung (Ist − Soll pro Monat, kumulativ) ──
+  const overtimeMap = useMemo(() => {
+    const map = new Map<string, number>(); // empId -> cumulative overtime hours
+    if (!employees || !timeEntries || isObstgaertlaAdmin) return map;
+    if (adminData?.autoOvertimeCalc === false) return map;
+
+    const now = new Date();
+    employees.forEach(emp => {
+      if (emp.isArchived || !emp.agreedHours) return;
+      // Calculate Soll for current month
+      const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+      const weekdaysInMonth = Array.from({ length: daysInMonth }, (_, i) => {
+        const d = new Date(now.getFullYear(), now.getMonth(), i + 1);
+        return d.getDay() !== 0 && d.getDay() !== 6 ? 1 : 0;
+      }).reduce((a, b) => a + b, 0);
+
+      let sollHours: number;
+      if (emp.agreedHoursPeriod === 'weekly') {
+        sollHours = emp.agreedHours * (weekdaysInMonth / 5);
+      } else {
+        sollHours = emp.agreedHours;
+      }
+
+      const istHours = workedHoursMap.get(emp.id) || 0;
+      const overtime = istHours - sollHours;
+      const totalOvertime = (emp.overtimeBalance || 0) + overtime;
+      map.set(emp.id, totalOvertime);
+    });
+    return map;
+  }, [employees, timeEntries, workedHoursMap, adminData, isObstgaertlaAdmin]);
+
+  // ── ArbZG Compliance Warnungen ──
+  type ComplianceWarning = { empId: string; empName: string; type: 'maxHours' | 'restPeriod' | 'sunday'; date: string; detail: string };
+  const complianceWarnings = useMemo(() => {
+    const warnings: ComplianceWarning[] = [];
+    if (!timeEntries || !employees) return warnings;
+    const maxMode = adminData?.maxDailyHoursMode || 'off';
+    const restMode = adminData?.restPeriodMode || 'off';
+    const sundayMode = adminData?.sundayWorkDetection || false;
+    if (maxMode === 'off' && restMode === 'off' && !sundayMode) return warnings;
+
+    // Group work entries by employee
+    const byEmp = new Map<string, TimeEntry[]>();
+    timeEntries.forEach(e => {
+      if (e.entryType && e.entryType !== 'WORK') return;
+      if (!e.clockOutTime) return;
+      if (!byEmp.has(e.employeeId)) byEmp.set(e.employeeId, []);
+      byEmp.get(e.employeeId)!.push(e);
+    });
+
+    byEmp.forEach((entries, empId) => {
+      const emp = employees.find(e => e.id === empId);
+      if (!emp) return;
+      const sorted = [...entries].sort((a, b) => a.clockInTime.localeCompare(b.clockInTime));
+
+      // Group by day
+      const byDay = new Map<string, TimeEntry[]>();
+      sorted.forEach(e => {
+        const key = format(parseISO(e.clockInTime), 'yyyy-MM-dd');
+        if (!byDay.has(key)) byDay.set(key, []);
+        byDay.get(key)!.push(e);
+      });
+
+      // §3 ArbZG: >10h per day
+      if (maxMode !== 'off') {
+        byDay.forEach((dayEntries, dateKey) => {
+          let totalMins = 0;
+          dayEntries.forEach(e => {
+            totalMins += differenceInMinutes(parseISO(e.clockOutTime!), parseISO(e.clockInTime));
+          });
+          if (totalMins > 600) { // >10h
+            warnings.push({ empId, empName: emp.fullName, type: 'maxHours', date: dateKey,
+              detail: `${Math.round(totalMins / 60 * 10) / 10}h gearbeitet (max. 10h erlaubt)` });
+          }
+        });
+      }
+
+      // §5 ArbZG: <11h rest between days
+      if (restMode !== 'off') {
+        const dayKeys = [...byDay.keys()].sort();
+        for (let i = 1; i < dayKeys.length; i++) {
+          const prevDay = byDay.get(dayKeys[i - 1])!;
+          const currDay = byDay.get(dayKeys[i])!;
+          const lastOut = prevDay.reduce((max, e) =>
+            e.clockOutTime && e.clockOutTime > max ? e.clockOutTime : max, '');
+          const firstIn = currDay[0].clockInTime;
+          if (lastOut && firstIn) {
+            const restMins = differenceInMinutes(parseISO(firstIn), parseISO(lastOut));
+            if (restMins < 660 && restMins > 0) { // <11h
+              warnings.push({ empId, empName: emp.fullName, type: 'restPeriod', date: dayKeys[i],
+                detail: `Nur ${Math.round(restMins / 60 * 10) / 10}h Ruhezeit (min. 11h nötig)` });
+            }
+          }
+        }
+      }
+
+      // §9 ArbZG: Sunday work
+      if (sundayMode) {
+        byDay.forEach((_, dateKey) => {
+          const d = parseISO(dateKey);
+          if (d.getDay() === 0) {
+            warnings.push({ empId, empName: emp.fullName, type: 'sunday', date: dateKey,
+              detail: 'Sonntagsarbeit – Ersatzruhetag innerhalb 2 Wochen nötig' });
+          }
+        });
+      }
+    });
+
+    return warnings.sort((a, b) => b.date.localeCompare(a.date));
+  }, [timeEntries, employees, adminData]);
 
   const filteredEmployees = useMemo(() => {
     if (!employees) return [];
@@ -1346,8 +1462,20 @@ function DashboardContent() {
   const handleDeleteAllData = () => {
     if (!firestore || !activeAdminUid || !employees || !timeEntries) return;
 
+    // §16 ArbZG: Aufbewahrungspflicht — Zeiteinträge < 2 Jahre dürfen nicht gelöscht werden
+    const twoYearsAgo = new Date();
+    twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2);
+    let protectedCount = 0;
+    let deletedCount = 0;
+
     timeEntries.forEach(entry => {
-      deleteDocumentNonBlocking(doc(firestore, 'timeEntries', entry.id));
+      const entryDate = new Date(entry.clockInTime);
+      if (entryDate >= twoYearsAgo) {
+        protectedCount++;
+      } else {
+        deleteDocumentNonBlocking(doc(firestore, 'timeEntries', entry.id));
+        deletedCount++;
+      }
     });
     employees.forEach(emp => {
       deleteDocumentNonBlocking(doc(firestore, 'employees', emp.id));
@@ -1360,7 +1488,9 @@ function DashboardContent() {
 
     toast({
       title: "Daten gelöscht",
-      description: "Alle Mitarbeiter und Zeitprotokolle wurden entfernt."
+      description: protectedCount > 0
+        ? `${deletedCount} alte Einträge gelöscht. ${protectedCount} Einträge (< 2 Jahre) bleiben gemäß §16 ArbZG erhalten.`
+        : "Alle Mitarbeiter und Zeitprotokolle wurden entfernt."
     });
   };
 
@@ -1550,6 +1680,9 @@ function DashboardContent() {
                     {impersonateAdmin ? `Fremdzugriff: ${impersonateAdmin.email}` : 'Support-Tool'}
                   </Button>
                 )}
+                <Button variant="ghost" size="sm" onClick={() => setIsSettingsOpen(true)} className="text-muted-foreground hover:text-primary">
+                  <Settings2 className="w-4 h-4 mr-2" /> Einstellungen
+                </Button>
                 <Button variant="ghost" size="sm" onClick={handleLogout} disabled={isLogoutLoading} className="text-muted-foreground hover:text-destructive">
                   {isLogoutLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <LogOut className="w-4 h-4 mr-2" />}
                   Abmelden
@@ -1887,11 +2020,14 @@ function DashboardContent() {
                                   </div>
                                 </TableCell>
                                 <TableCell>
-                                  {isFeatureActive ? (
-                                    <Badge variant="outline" className={`font-mono ${(emp.overtimeBalance || 0) < 0 ? 'text-destructive' : 'text-green-600'}`}>
-                                      {(emp.overtimeBalance || 0).toFixed(2)}h
-                                    </Badge>
-                                  ) : (
+                                  {isFeatureActive ? (() => {
+                                    const ot = overtimeMap.get(emp.id) ?? (emp.overtimeBalance || 0);
+                                    return (
+                                      <Badge variant="outline" className={`font-mono ${ot < 0 ? 'text-destructive border-destructive/30' : ot > 0 ? 'text-green-600 border-green-300' : ''}`}>
+                                        {ot > 0 ? '+' : ''}{ot.toFixed(1)}h
+                                      </Badge>
+                                    );
+                                  })() : (
                                     <span className="text-muted-foreground/30">—</span>
                                   )}
                                 </TableCell>
@@ -3528,6 +3664,176 @@ function DashboardContent() {
             </Button>
             <Button variant="ghost" onClick={() => setIsAddShiftOpen(false)} className="w-full">Abbrechen</Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── ArbZG Compliance Warnungen Banner ── */}
+      {complianceWarnings.length > 0 && (
+        <Dialog>
+          <DialogTrigger asChild>
+            <div className="fixed bottom-6 right-6 z-50 cursor-pointer">
+              <Badge className="bg-gradient-to-r from-red-500 to-orange-500 text-white px-4 py-2.5 rounded-full shadow-lg gap-2 text-sm hover:shadow-xl transition-all animate-pulse">
+                <AlertTriangle className="w-4 h-4" /> {complianceWarnings.length} ArbZG-Warnung{complianceWarnings.length > 1 ? 'en' : ''}
+              </Badge>
+            </div>
+          </DialogTrigger>
+          <DialogContent className="rounded-2xl max-w-lg max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2"><AlertTriangle className="w-5 h-5 text-destructive" /> ArbZG-Warnungen</DialogTitle>
+              <DialogDescription>Erkannte Verstöße gegen das Arbeitszeitgesetz.</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-2 py-2">
+              {complianceWarnings.map((w, i) => (
+                <div key={i} className={`p-3 rounded-xl border text-sm ${
+                  w.type === 'maxHours' ? 'bg-red-50 border-red-200' :
+                  w.type === 'restPeriod' ? 'bg-orange-50 border-orange-200' :
+                  'bg-blue-50 border-blue-200'
+                }`}>
+                  <div className="font-bold">{w.empName} — {format(parseISO(w.date), 'dd.MM.yyyy', { locale: de })}</div>
+                  <div className="text-muted-foreground">{w.detail}</div>
+                </div>
+              ))}
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* ── Einstellungen Dialog ── */}
+      <Dialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
+        <DialogContent className="rounded-2xl max-w-lg max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Settings2 className="w-5 h-5" /> Einstellungen</DialogTitle>
+            <DialogDescription>ArbZG-Compliance & Systemkonfiguration</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-6 py-4">
+
+            {/* §4 ArbZG: Pausenabzug */}
+            <div className="space-y-3">
+              <h4 className="text-sm font-bold text-foreground flex items-center gap-2"><Coffee className="w-4 h-4 text-amber-600" /> §4 ArbZG — Pausenregelung</h4>
+              <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border">
+                <div>
+                  <p className="text-sm font-medium">Automatischer Pausenabzug</p>
+                  <p className="text-xs text-muted-foreground">&gt;6h → 30min, &gt;9h → 45min Pflichtpause</p>
+                </div>
+                <Switch
+                  checked={adminData?.autoBreakDeduction || false}
+                  onCheckedChange={(checked) => {
+                    if (firestore && activeAdminUid && !impersonateAdmin)
+                      updateDocumentNonBlocking(doc(firestore, 'adminUsers', activeAdminUid), { autoBreakDeduction: checked });
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* §3 ArbZG: Tagesarbeitszeit */}
+            <div className="space-y-3">
+              <h4 className="text-sm font-bold text-foreground flex items-center gap-2"><Clock className="w-4 h-4 text-red-600" /> §3 ArbZG — Max. Tagesarbeitszeit (10h)</h4>
+              <Select
+                value={adminData?.maxDailyHoursMode || 'off'}
+                onValueChange={(v: 'off' | 'warn' | 'block') => {
+                  if (firestore && activeAdminUid && !impersonateAdmin)
+                    updateDocumentNonBlocking(doc(firestore, 'adminUsers', activeAdminUid), { maxDailyHoursMode: v });
+                }}
+              >
+                <SelectTrigger className="rounded-xl"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="off">Aus — Keine Prüfung</SelectItem>
+                  <SelectItem value="warn">Warnung — Bei Überschreitung informieren</SelectItem>
+                  <SelectItem value="block">Blockieren — Ausstempeln nach 10h erzwingen</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* §5 ArbZG: Ruhezeit */}
+            <div className="space-y-3">
+              <h4 className="text-sm font-bold text-foreground flex items-center gap-2"><Moon className="w-4 h-4 text-indigo-600" /> §5 ArbZG — Ruhezeit (min. 11h)</h4>
+              <Select
+                value={adminData?.restPeriodMode || 'off'}
+                onValueChange={(v: 'off' | 'warn' | 'block') => {
+                  if (firestore && activeAdminUid && !impersonateAdmin)
+                    updateDocumentNonBlocking(doc(firestore, 'adminUsers', activeAdminUid), { restPeriodMode: v });
+                }}
+              >
+                <SelectTrigger className="rounded-xl"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="off">Aus — Keine Prüfung</SelectItem>
+                  <SelectItem value="warn">Warnung — Bei Unterschreitung informieren</SelectItem>
+                  <SelectItem value="block">Blockieren — Einstempeln vor 11h-Ruhezeit verhindern</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* §9 ArbZG: Sonntagsarbeit */}
+            <div className="space-y-3">
+              <h4 className="text-sm font-bold text-foreground flex items-center gap-2"><CalendarIcon className="w-4 h-4 text-blue-600" /> §9 ArbZG — Sonntagsarbeit</h4>
+              <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border">
+                <div>
+                  <p className="text-sm font-medium">Sonntagsarbeit erkennen</p>
+                  <p className="text-xs text-muted-foreground">Warnung bei Arbeit an Sonntagen anzeigen</p>
+                </div>
+                <Switch
+                  checked={adminData?.sundayWorkDetection || false}
+                  onCheckedChange={(checked) => {
+                    if (firestore && activeAdminUid && !impersonateAdmin)
+                      updateDocumentNonBlocking(doc(firestore, 'adminUsers', activeAdminUid), { sundayWorkDetection: checked });
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* Überstunden */}
+            <div className="space-y-3">
+              <h4 className="text-sm font-bold text-foreground flex items-center gap-2"><ArrowRight className="w-4 h-4 text-green-600" /> Überstunden</h4>
+              <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border">
+                <div>
+                  <p className="text-sm font-medium">Automatische Berechnung</p>
+                  <p className="text-xs text-muted-foreground">Ist-Stunden vs. Soll-Stunden aus MA-Profil</p>
+                </div>
+                <Switch
+                  checked={adminData?.autoOvertimeCalc !== false}
+                  onCheckedChange={(checked) => {
+                    if (firestore && activeAdminUid && !impersonateAdmin)
+                      updateDocumentNonBlocking(doc(firestore, 'adminUsers', activeAdminUid), { autoOvertimeCalc: checked });
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* Standort-Sperre */}
+            <div className="space-y-3">
+              <h4 className="text-sm font-bold text-foreground flex items-center gap-2"><Wifi className="w-4 h-4 text-cyan-600" /> Standort-Sperre (WLAN)</h4>
+              <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border">
+                <div>
+                  <p className="text-sm font-medium">Nur vom Büro-Netzwerk</p>
+                  <p className="text-xs text-muted-foreground">Stempeln nur aus dem Büro-WLAN erlaubt</p>
+                </div>
+                <Switch
+                  checked={adminData?.locationLockEnabled || false}
+                  onCheckedChange={(checked) => {
+                    if (firestore && activeAdminUid && !impersonateAdmin)
+                      updateDocumentNonBlocking(doc(firestore, 'adminUsers', activeAdminUid), { locationLockEnabled: checked });
+                  }}
+                />
+              </div>
+              {adminData?.locationLockEnabled && (
+                <div className="text-xs text-muted-foreground p-2 bg-cyan-50 rounded-lg border border-cyan-200">
+                  Aktuelle IP: <span className="font-mono font-bold">{adminData.locationIp || 'Nicht gesetzt'}</span>
+                  {adminData.lastClientIp && <> | Letzte Client-IP: <span className="font-mono">{adminData.lastClientIp}</span></>}
+                </div>
+              )}
+            </div>
+
+            {/* Billing */}
+            <div className="space-y-3">
+              <h4 className="text-sm font-bold text-foreground flex items-center gap-2"><CreditCard className="w-4 h-4 text-purple-600" /> Abonnement</h4>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" className="rounded-xl flex-1" onClick={handleManageBilling}>
+                  Abo verwalten
+                </Button>
+              </div>
+            </div>
+
+          </div>
         </DialogContent>
       </Dialog>
     </TooltipProvider>

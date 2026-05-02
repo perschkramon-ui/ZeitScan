@@ -57,6 +57,16 @@ export type AdminUser = {
   lastClientIp?: string;
   /** ISO timestamp of when lastClientIp was reported */
   lastClientIpAt?: string;
+
+  // ── ArbZG Compliance Settings ──
+  /** §3 ArbZG: Max 10h/day enforcement. 'off' | 'warn' | 'block' (default: 'off') */
+  maxDailyHoursMode?: 'off' | 'warn' | 'block';
+  /** §5 ArbZG: Min 11h rest between days. 'off' | 'warn' | 'block' (default: 'off') */
+  restPeriodMode?: 'off' | 'warn' | 'block';
+  /** §9 ArbZG: Flag Sunday/holiday work (default: false) */
+  sundayWorkDetection?: boolean;
+  /** Automatic overtime calculation from agreedHours vs actual (default: true) */
+  autoOvertimeCalc?: boolean;
 };
 
 export type ScheduleEntry = {
