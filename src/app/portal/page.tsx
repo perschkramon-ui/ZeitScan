@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, useRef, Suspense } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -17,7 +17,7 @@ import {
   useAuth,
   useDoc
 } from '@/firebase';
-import { collection, query, where, onSnapshot, doc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, getDocs } from 'firebase/firestore';
 import { signInAnonymously } from 'firebase/auth';
 import type { Employee, TimeEntry, ScheduleEntry, AdminUser } from '@/lib/store';
 import { Badge } from '@/components/ui/badge';
@@ -48,6 +48,7 @@ function PortalContent() {
   const [activeEntryId, setActiveEntryId] = useState<string | null>(null);
   const [currentStatus, setCurrentStatus] = useState<'present' | 'pause' | 'absent'>('absent');
   const [isStatusLoading, setIsStatusLoading] = useState(false);
+  const clockInLockRef = useRef(false);
   const [isExitDialogOpen, setIsExitDialogOpen] = useState(false);
   const [locationBlocked, setLocationBlocked] = useState(false);
 
@@ -224,6 +225,32 @@ function PortalContent() {
     }
 
     if (action === 'IN') {
+      // Prevent double-submission via ref lock
+      if (clockInLockRef.current) {
+        setIsProcessing(false);
+        return;
+      }
+      clockInLockRef.current = true;
+
+      // Firestore-level duplicate check: abort if an open entry already exists
+      try {
+        const dupQ = query(
+          collection(firestore, 'timeEntries'),
+          where('employeeId', '==', employee.id),
+          where('adminId', '==', adminId),
+          where('clockOutTime', '==', null)
+        );
+        const dupSnap = await getDocs(dupQ);
+        if (!dupSnap.empty) {
+          toast({ title: "Bereits eingestempelt", description: `${employee.fullName} hat bereits einen offenen Eintrag.`, variant: "destructive" });
+          setIsProcessing(false);
+          clockInLockRef.current = false;
+          return;
+        }
+      } catch {
+        // If query fails, continue with local status check as fallback
+      }
+
       let clockInTime = new Date();
       let successMsg = 'eingestempelt';
 
@@ -253,10 +280,12 @@ function PortalContent() {
       addDocumentNonBlocking(collection(firestore, 'timeEntries'), entryData)
         .then(() => {
           showSuccess(successMsg);
+          clockInLockRef.current = false;
         })
         .catch(() => {
           toast({ title: "Fehler", description: "Einstempeln fehlgeschlagen.", variant: "destructive" });
           setIsProcessing(false);
+          clockInLockRef.current = false;
         });
     } else {
       if (!activeEntryId) {

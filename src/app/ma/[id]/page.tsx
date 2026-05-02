@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, Suspense, use } from 'react';
+import { useState, useEffect, useMemo, useRef, Suspense, use } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -16,7 +16,7 @@ import {
   deleteDocumentNonBlocking,
   useAuth
 } from '@/firebase';
-import { collection, query, where, onSnapshot, doc, getDoc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, getDoc, getDocs } from 'firebase/firestore';
 import { signInAnonymously } from 'firebase/auth';
 import type { Employee, TimeEntry, ScheduleEntry, AdminUser } from '@/lib/store';
 import { format, startOfMonth, parseISO, isSameDay, addDays, differenceInMinutes, startOfDay, endOfDay } from 'date-fns';
@@ -62,6 +62,7 @@ function MAAppContent({ id }: { id: string }) {
   const [activeEntryId, setActiveEntryId] = useState<string | null>(null);
   const [currentStatus, setCurrentStatus] = useState<'present' | 'pause' | 'absent'>('absent');
   const [isProcessing, setIsProcessing] = useState(false);
+  const clockInLockRef = useRef(false);
   const [isExitDialogOpen, setIsExitDialogOpen] = useState(false);
   const [success, setSuccess] = useState<string | null>(null);
   const [locationBlocked, setLocationBlocked] = useState(false);
@@ -263,6 +264,32 @@ function MAAppContent({ id }: { id: string }) {
     }
 
     if (action === 'IN') {
+      // Prevent double-submission via ref lock
+      if (clockInLockRef.current) {
+        setIsProcessing(false);
+        return;
+      }
+      clockInLockRef.current = true;
+
+      // Firestore-level duplicate check: abort if an open entry already exists
+      try {
+        const dupQ = query(
+          collection(firestore, 'timeEntries'),
+          where('employeeId', '==', employee.id),
+          where('adminId', '==', employee.adminId),
+          where('clockOutTime', '==', null)
+        );
+        const dupSnap = await getDocs(dupQ);
+        if (!dupSnap.empty) {
+          toast({ title: "Bereits eingestempelt", description: "Du hast bereits einen offenen Eintrag.", variant: "destructive" });
+          setIsProcessing(false);
+          clockInLockRef.current = false;
+          return;
+        }
+      } catch {
+        // If query fails, continue as fallback
+      }
+
       const entryData = {
         adminId: employee.adminId,
         employeeId: employee.id,
@@ -277,10 +304,12 @@ function MAAppContent({ id }: { id: string }) {
       addDocumentNonBlocking(collection(firestore, 'timeEntries'), entryData)
         .then(() => {
           showSuccess('eingestempelt');
+          clockInLockRef.current = false;
         })
         .catch(() => {
           toast({ title: "Fehler", description: "Einstempeln fehlgeschlagen.", variant: "destructive" });
           setIsProcessing(false);
+          clockInLockRef.current = false;
         });
     } else {
       if (!activeEntryId) {

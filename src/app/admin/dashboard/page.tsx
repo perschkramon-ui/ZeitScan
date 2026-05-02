@@ -353,6 +353,8 @@ function DashboardContent() {
   // Logs Dialog State
   const [viewingLogsEmployee, setViewingLogsEmployee] = useState<Employee | null>(null);
   const [logsFilter, setLogsFilter] = useState<'month' | 'year' | 'all'>('month');
+  const [logsMonth, setLogsMonth] = useState(new Date().getMonth()); // 0-indexed
+  const [logsYear, setLogsYear] = useState(new Date().getFullYear());
 
   // Edit Time Entry State
   const [editingTimeEntry, setEditingTimeEntry] = useState<TimeEntry | null>(null);
@@ -471,15 +473,31 @@ function DashboardContent() {
     const map = new Map<string, boolean>();
     if (!timeEntries) return map;
 
+    // Group work entries by employee + day
+    const byEmpDay = new Map<string, TimeEntry[]>();
     timeEntries.forEach(entry => {
       if (entry.entryType && entry.entryType !== 'WORK') return;
-      const dayEntries = timeEntries.filter(e =>
-        e.employeeId === entry.employeeId &&
-        (!e.entryType || e.entryType === 'WORK') &&
-        isSameDay(parseISO(e.clockInTime), parseISO(entry.clockInTime))
-      );
-      if (dayEntries.length > 1) {
-        map.set(entry.employeeId, true);
+      const dayKey = `${entry.employeeId}_${format(parseISO(entry.clockInTime), 'yyyy-MM-dd')}`;
+      if (!byEmpDay.has(dayKey)) byEmpDay.set(dayKey, []);
+      byEmpDay.get(dayKey)!.push(entry);
+    });
+
+    byEmpDay.forEach((dayEntries, dayKey) => {
+      if (dayEntries.length <= 1) return;
+      const empId = dayKey.split('_')[0];
+
+      // Check for true duplicates: entries with clockInTime within 60s of each other
+      for (let i = 0; i < dayEntries.length; i++) {
+        for (let j = i + 1; j < dayEntries.length; j++) {
+          const diff = Math.abs(
+            parseISO(dayEntries[i].clockInTime).getTime() -
+            parseISO(dayEntries[j].clockInTime).getTime()
+          );
+          if (diff < 60000) { // Within 60 seconds = likely duplicate
+            map.set(empId, true);
+            return;
+          }
+        }
       }
     });
     return map;
@@ -651,14 +669,26 @@ function DashboardContent() {
       .sort((a, b) => a.fullName.localeCompare(b.fullName));
   }, [employees, searchTerm, showArchived]);
 
+  // Helper: compute the reference date range for logs filters
+  const logsDateRange = useMemo(() => {
+    if (logsFilter === 'all') return { start: new Date(0), end: new Date(9999, 11, 31) };
+    if (logsFilter === 'year') {
+      const refDate = setYear(new Date(), logsYear);
+      return { start: startOfYear(refDate), end: endOfYear(refDate) };
+    }
+    // 'month'
+    const refDate = setYear(setMonth(new Date(), logsMonth), logsYear);
+    return { start: startOfMonth(refDate), end: endOfMonth(refDate) };
+  }, [logsFilter, logsMonth, logsYear]);
+
   const logSummary = useMemo(() => {
     if (!viewingLogsEmployee || !timeEntries) return { work: 0, vacation: 0, sick: 0 };
     const filtered = timeEntries.filter(e => {
       if (e.employeeId !== viewingLogsEmployee.id) return false;
       const date = parseISO(e.clockInTime);
-      const now = new Date();
       if (logsFilter === 'all') return true;
-      return logsFilter === 'month' ? (isAfter(date, startOfMonth(now)) || isSameDay(date, startOfMonth(now))) : (isAfter(date, startOfYear(now)) || isSameDay(date, startOfYear(now)));
+      return (isAfter(date, logsDateRange.start) || isSameDay(date, logsDateRange.start)) &&
+             (isBefore(date, logsDateRange.end) || isSameDay(date, logsDateRange.end));
     });
 
     const autoBreakLog = adminData?.autoBreakDeduction === true;
@@ -725,7 +755,7 @@ function DashboardContent() {
       }
       return acc;
     }, { work: totalWorkHours, vacation: 0, sick: 0 });
-  }, [viewingLogsEmployee, timeEntries, logsFilter, adminData, schedules]);
+  }, [viewingLogsEmployee, timeEntries, logsFilter, logsDateRange, adminData, schedules]);
 
   const fmtDur = (mins: number) => {
     const h = Math.floor(Math.abs(mins) / 60);
@@ -1357,8 +1387,22 @@ function DashboardContent() {
     }).catch(() => setIsLogoutLoading(false));
   };
 
-  const handleManualClockIn = (emp: Employee) => {
+  const handleManualClockIn = async (emp: Employee) => {
     if (!firestore || !user) return;
+
+    // Check for existing open entry to prevent duplicates
+    if (timeEntries) {
+      const existingOpen = timeEntries.find(e =>
+        e.employeeId === emp.id &&
+        (!e.entryType || e.entryType === 'WORK') &&
+        !e.clockOutTime
+      );
+      if (existingOpen) {
+        toast({ title: "Bereits eingestempelt", description: `${emp.fullName} hat bereits einen offenen Eintrag.`, variant: "destructive" });
+        return;
+      }
+    }
+
     addDocumentNonBlocking(collection(firestore, 'timeEntries'), {
       adminId: activeAdminUid,
       employeeId: emp.id,
@@ -3040,25 +3084,95 @@ function DashboardContent() {
       {/* Logs Dialog */}
       <Dialog open={!!viewingLogsEmployee} onOpenChange={(o) => !o && setViewingLogsEmployee(null)}>
         <DialogContent className="rounded-2xl max-w-4xl max-h-[85vh] overflow-hidden flex flex-col">
-          <DialogHeader className="flex flex-row items-center justify-between pr-8">
-            <div className="flex-1">
-              <DialogTitle className="flex items-center justify-between">
-                Zeitprotokoll & Historie: {viewingLogsEmployee?.fullName}
-                <div className="flex gap-2">
-                  <Button variant="outline" size="sm" onClick={() => setIsAbsenceDialogOpen(true)}>
-                    <CalendarPlus className="w-4 h-4 mr-2" /> Tag buchen
-                  </Button>
-                  <Button variant="ghost" size="sm" onClick={() => viewingLogsEmployee && handleExportCSV(viewingLogsEmployee)}>
-                    <Download className="w-4 h-4 mr-2" /> CSV
-                  </Button>
-                </div>
-              </DialogTitle>
-              <DialogDescription>Alle Arbeitszeiten und Historien.</DialogDescription>
+          <DialogHeader className="space-y-4 pr-8">
+            <div className="flex flex-row items-center justify-between">
+              <div className="flex-1">
+                <DialogTitle className="flex items-center justify-between">
+                  Zeitprotokoll & Historie: {viewingLogsEmployee?.fullName}
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" onClick={() => setIsAbsenceDialogOpen(true)}>
+                      <CalendarPlus className="w-4 h-4 mr-2" /> Tag buchen
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => viewingLogsEmployee && handleExportCSV(viewingLogsEmployee)}>
+                      <Download className="w-4 h-4 mr-2" /> CSV
+                    </Button>
+                  </div>
+                </DialogTitle>
+                <DialogDescription>Alle Arbeitszeiten und Historien.</DialogDescription>
+              </div>
             </div>
-            <div className="flex items-center gap-2 bg-muted/50 p-1 rounded-lg ml-4">
-              <Button variant={logsFilter === 'month' ? 'secondary' : 'ghost'} size="sm" className="h-8" onClick={() => setLogsFilter('month')}>Monat</Button>
-              <Button variant={logsFilter === 'year' ? 'secondary' : 'ghost'} size="sm" className="h-8" onClick={() => setLogsFilter('year')}>Jahr</Button>
-              <Button variant={logsFilter === 'all' ? 'secondary' : 'ghost'} size="sm" className="h-8" onClick={() => setLogsFilter('all')}>Alle</Button>
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-1 bg-muted/50 p-1 rounded-lg">
+                <Button variant={logsFilter === 'month' ? 'secondary' : 'ghost'} size="sm" className="h-8" onClick={() => setLogsFilter('month')}>Monat</Button>
+                <Button variant={logsFilter === 'year' ? 'secondary' : 'ghost'} size="sm" className="h-8" onClick={() => setLogsFilter('year')}>Jahr</Button>
+                <Button variant={logsFilter === 'all' ? 'secondary' : 'ghost'} size="sm" className="h-8" onClick={() => setLogsFilter('all')}>Alle</Button>
+              </div>
+
+              {/* Month/Year Navigation */}
+              {logsFilter === 'month' && (
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" size="icon" className="h-8 w-8 rounded-lg" onClick={() => {
+                    if (logsMonth === 0) { setLogsMonth(11); setLogsYear(y => y - 1); }
+                    else setLogsMonth(m => m - 1);
+                  }}>
+                    <ChevronLeft className="w-4 h-4" />
+                  </Button>
+                  <div className="flex items-center gap-1">
+                    <Select value={String(logsMonth)} onValueChange={(v) => setLogsMonth(Number(v))}>
+                      <SelectTrigger className="h-8 w-[120px] rounded-lg text-sm font-medium">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {MONTHS_LIST.map((m, i) => (
+                          <SelectItem key={m} value={String(i)}>{m}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Select value={String(logsYear)} onValueChange={(v) => setLogsYear(Number(v))}>
+                      <SelectTrigger className="h-8 w-[80px] rounded-lg text-sm font-medium">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {YEARS_LIST.map(y => (
+                          <SelectItem key={y} value={y}>{y}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <Button variant="outline" size="icon" className="h-8 w-8 rounded-lg" onClick={() => {
+                    if (logsMonth === 11) { setLogsMonth(0); setLogsYear(y => y + 1); }
+                    else setLogsMonth(m => m + 1);
+                  }}>
+                    <ChevronRightIcon className="w-4 h-4" />
+                  </Button>
+                  <Button variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground" onClick={() => {
+                    setLogsMonth(new Date().getMonth());
+                    setLogsYear(new Date().getFullYear());
+                  }}>Heute</Button>
+                </div>
+              )}
+
+              {logsFilter === 'year' && (
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" size="icon" className="h-8 w-8 rounded-lg" onClick={() => setLogsYear(y => y - 1)}>
+                    <ChevronLeft className="w-4 h-4" />
+                  </Button>
+                  <Select value={String(logsYear)} onValueChange={(v) => setLogsYear(Number(v))}>
+                    <SelectTrigger className="h-8 w-[80px] rounded-lg text-sm font-medium">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {YEARS_LIST.map(y => (
+                        <SelectItem key={y} value={y}>{y}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button variant="outline" size="icon" className="h-8 w-8 rounded-lg" onClick={() => setLogsYear(y => y + 1)}>
+                    <ChevronRightIcon className="w-4 h-4" />
+                  </Button>
+                  <Button variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground" onClick={() => setLogsYear(new Date().getFullYear())}>Aktuell</Button>
+                </div>
+              )}
             </div>
           </DialogHeader>
 
@@ -3109,9 +3223,9 @@ function DashboardContent() {
                 {timeEntries?.filter(e => {
                   if (e.employeeId !== viewingLogsEmployee?.id) return false;
                   const date = parseISO(e.clockInTime);
-                  const now = new Date();
                   if (logsFilter === 'all') return true;
-                  return logsFilter === 'month' ? (isAfter(date, startOfMonth(now)) || isSameDay(date, startOfMonth(now))) : (isAfter(date, startOfYear(now)) || isSameDay(date, startOfYear(now)));
+                  return (isAfter(date, logsDateRange.start) || isSameDay(date, logsDateRange.start)) &&
+                         (isBefore(date, logsDateRange.end) || isSameDay(date, logsDateRange.end));
                 })
                   .sort((a, b) => b.clockInTime.localeCompare(a.clockInTime))
                   .map(entry => {
