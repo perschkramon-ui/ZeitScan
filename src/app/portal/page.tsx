@@ -22,7 +22,7 @@ import { signInAnonymously } from 'firebase/auth';
 import type { Employee, TimeEntry, ScheduleEntry, AdminUser } from '@/lib/store';
 import { Badge } from '@/components/ui/badge';
 import { useSearchParams } from 'next/navigation';
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import { de } from 'date-fns/locale';
 import {
   Dialog,
@@ -51,6 +51,8 @@ function PortalContent() {
   const clockInLockRef = useRef(false);
   const [isExitDialogOpen, setIsExitDialogOpen] = useState(false);
   const [locationBlocked, setLocationBlocked] = useState(false);
+  const [restPeriodBlocked, setRestPeriodBlocked] = useState(false);
+  const [restRemaining, setRestRemaining] = useState('');
 
   // Today's date string for schedule lookup
   const todayStr = format(new Date(), 'yyyy-MM-dd');
@@ -138,10 +140,14 @@ function PortalContent() {
       .catch(() => {});
   }, [firestore, adminId, user]);
 
+  const [limitReached, setLimitReached] = useState(false);
+
   useEffect(() => {
     if (!selectedId || !firestore || !adminId || !user) {
       setActiveEntryId(null);
       setCurrentStatus('absent');
+      setLimitReached(false);
+      setRestPeriodBlocked(false);
       return;
     }
 
@@ -156,6 +162,82 @@ function PortalContent() {
       const entries = snapshot.docs.map(d => ({ ...d.data(), id: d.id } as TimeEntry));
       const sorted = entries.sort((a, b) => b.clockInTime.localeCompare(a.clockInTime));
       const lastEntry = sorted[0];
+
+      // --- 10h Limit Logic ---
+      const now = new Date();
+      const todayStrLocal = format(now, 'yyyy-MM-dd');
+      let previousNetMins = 0;
+      let activeClockInTime: Date | null = null;
+
+      entries.forEach(e => {
+        if (e.entryType && e.entryType !== 'WORK') return;
+        const clockIn = parseISO(e.clockInTime);
+        if (format(clockIn, 'yyyy-MM-dd') === todayStrLocal) {
+          if (e.clockOutTime) {
+            previousNetMins += (parseISO(e.clockOutTime).getTime() - clockIn.getTime()) / 60000;
+          } else if (lastEntry && e.id === lastEntry.id) {
+            activeClockInTime = clockIn;
+          }
+        }
+      });
+
+      let currentNetMins = previousNetMins;
+      if (activeClockInTime) {
+        currentNetMins += (now.getTime() - activeClockInTime.getTime()) / 60000;
+      }
+
+      if (adminData?.maxDailyHoursMode === 'block') {
+        if (activeClockInTime && currentNetMins >= 600) {
+          // Force clock out at exactly the 10h mark
+          const remainingMinsAllowed = 600 - previousNetMins;
+          const exact10hTime = new Date(activeClockInTime.getTime() + remainingMinsAllowed * 60000);
+          
+          updateDocumentNonBlocking(doc(firestore, 'timeEntries', lastEntry.id), {
+            clockOutTime: exact10hTime.toISOString(),
+            updatedAt: now.toISOString(),
+            exitType: 'END'
+          });
+          toast({
+            title: "Tageshöchstarbeitszeit erreicht",
+            description: "Die Grenze von 10 Stunden wurde erreicht. Sie wurden automatisch ausgestempelt.",
+            variant: "destructive"
+          });
+          setLimitReached(true);
+          // Don't set present, since we just clocked them out
+          setActiveEntryId(null);
+          setCurrentStatus('absent');
+          setIsStatusLoading(false);
+          return;
+        } else if (!activeClockInTime && previousNetMins >= 600) {
+          setLimitReached(true);
+        } else {
+          setLimitReached(false);
+        }
+      } else {
+        setLimitReached(false);
+      }
+      // -----------------------
+
+      // --- 11h Rest Period Logic ---
+      let restBlocked = false;
+      let remainingRestStr = '';
+
+      if (adminData?.restPeriodMode === 'block') {
+        if (lastEntry && lastEntry.clockOutTime && lastEntry.exitType === 'END') {
+          const lastOut = parseISO(lastEntry.clockOutTime);
+          const diffMins = (now.getTime() - lastOut.getTime()) / 60000;
+          if (diffMins > 0 && diffMins < 660) {
+            restBlocked = true;
+            const remainingMins = 660 - diffMins;
+            const h = Math.floor(remainingMins / 60);
+            const m = Math.floor(remainingMins % 60);
+            remainingRestStr = `${h}h ${m > 0 ? m + 'm' : ''}`.trim();
+          }
+        }
+      }
+      setRestPeriodBlocked(restBlocked);
+      setRestRemaining(remainingRestStr);
+      // -----------------------------
 
       if (lastEntry && !lastEntry.clockOutTime) {
         setActiveEntryId(lastEntry.id);
@@ -174,7 +256,7 @@ function PortalContent() {
     });
 
     return () => unsubscribe();
-  }, [selectedId, firestore, adminId, user]);
+  }, [selectedId, firestore, adminId, user, adminData?.maxDailyHoursMode, adminData?.restPeriodMode, toast]);
 
   const handleClockAction = async (action: 'IN' | 'OUT', exitType?: 'PAUSE' | 'END') => {
     if (!selectedId || !firestore || !adminId) return;
@@ -417,8 +499,32 @@ function PortalContent() {
             </div>
           )}
 
+          {/* Limit reached blocked indicator */}
+          {selectedId && limitReached && (
+            <div className="bg-destructive/5 border border-destructive/20 rounded-2xl p-5 text-center space-y-2">
+              <AlertCircle className="w-10 h-10 text-destructive mx-auto" />
+              <p className="font-bold text-destructive">Tageslimit erreicht (10h)</p>
+              <p className="text-sm text-muted-foreground">
+                Sie haben heute bereits die maximale Arbeitszeit von 10 Stunden erreicht und können nicht mehr einstempeln.
+              </p>
+            </div>
+          )}
+
+          {/* Rest period blocked indicator */}
+          {selectedId && restPeriodBlocked && !limitReached && (
+            <div className="bg-indigo-50 border border-indigo-200 rounded-2xl p-5 text-center space-y-2">
+              <Moon className="w-10 h-10 text-indigo-600 mx-auto" />
+              <p className="font-bold text-indigo-800">Gesetzliche Ruhezeit (11h)</p>
+              <p className="text-sm text-indigo-700">
+                Sie müssen zwischen zwei Arbeitstagen mindestens 11 Stunden ruhen.
+                <br/>
+                Sie können in <strong>{restRemaining}</strong> wieder einstempeln.
+              </p>
+            </div>
+          )}
+
           {/* Blocked state card — shown when employee is not scheduled and not already present */}
-          {selectedId && scheduleFeatureActive && !schedulesLoading && !selectedEmployeeSchedule && currentStatus !== 'present' && (
+          {selectedId && !limitReached && !restPeriodBlocked && scheduleFeatureActive && !schedulesLoading && !selectedEmployeeSchedule && currentStatus !== 'present' && (
             <div className="bg-destructive/5 border border-destructive/20 rounded-2xl p-5 text-center space-y-2">
               <ShieldX className="w-10 h-10 text-destructive mx-auto" />
               <p className="font-bold text-destructive">Einstempeln gesperrt</p>
@@ -447,6 +553,8 @@ function PortalContent() {
                 isProcessing ||
                 !selectedId ||
                 currentStatus === 'present' ||
+                limitReached ||
+                restPeriodBlocked ||
                 (scheduleFeatureActive && !isScheduledToday && !schedulesLoading)
               }
               className="h-24 rounded-2xl text-lg font-bold gap-2 flex-col"

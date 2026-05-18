@@ -112,6 +112,7 @@ import {
   Plus,
   X,
   ShieldAlert,
+  Printer,
   Share2,
   Copy,
   MessageCircle,
@@ -122,7 +123,8 @@ import {
   MapPin,
   ShieldCheck,
   Settings2,
-  Moon
+  Moon,
+  Database
 } from 'lucide-react';
 import {
   startOfWeek,
@@ -317,7 +319,8 @@ function DashboardContent() {
   const [editVacation, setEditVacation] = useState('');
   const [editSickDays, setEditSickDays] = useState('');
   const [editPauseAddMode, setEditPauseAddMode] = useState(false);
-  const [editOvertimeRedist, setEditOvertimeRedist] = useState(false);
+  const [editOvertimeRedistDate, setEditOvertimeRedistDate] = useState<string>('');
+  const [editOvertimeRedistEndDate, setEditOvertimeRedistEndDate] = useState<string>('');
   // Pause Add Mode Activation/Deactivation Dialogs
   const [pauseActivationDialogOpen, setPauseActivationDialogOpen] = useState(false);
   const [pauseActivationMode, setPauseActivationMode] = useState<'all' | 'date'>('all');
@@ -334,6 +337,7 @@ function DashboardContent() {
 
   // Custom Export Selection State
   const [isCustomExportOpen, setIsCustomExportOpen] = useState(false);
+  const [isCustomExportOriginal, setIsCustomExportOriginal] = useState(false);
   const [customExportMonth, setCustomExportMonth] = useState(String(new Date().getMonth()));
   const [customExportYear, setCustomExportYear] = useState(String(new Date().getFullYear()));
 
@@ -719,13 +723,14 @@ function DashboardContent() {
   }, [employees, timeEntries, workedHoursMap, adminData, isObstgaertlaAdmin]);
 
   // ── ArbZG Compliance Warnungen ──
-  type ComplianceWarning = { empId: string; empName: string; type: 'maxHours' | 'restPeriod' | 'sunday'; date: string; detail: string };
+  type ComplianceWarning = { id: string; empId: string; empName: string; type: 'maxHours' | 'restPeriod' | 'sunday'; date: string; detail: string };
   const complianceWarnings = useMemo(() => {
     const warnings: ComplianceWarning[] = [];
     if (!timeEntries || !employees) return warnings;
     const maxMode = adminData?.maxDailyHoursMode || 'off';
     const restMode = adminData?.restPeriodMode || 'off';
     const sundayMode = adminData?.sundayWorkDetection || false;
+    const dismissed = adminData?.dismissedWarnings || [];
     if (maxMode === 'off' && restMode === 'off' && !sundayMode) return warnings;
 
     // Group work entries by employee
@@ -758,8 +763,11 @@ function DashboardContent() {
             totalMins += differenceInMinutes(parseISO(e.clockOutTime!), parseISO(e.clockInTime));
           });
           if (totalMins > 600) { // >10h
-            warnings.push({ empId, empName: emp.fullName, type: 'maxHours', date: dateKey,
-              detail: `${Math.round(totalMins / 60 * 10) / 10}h gearbeitet (max. 10h erlaubt)` });
+            const warningId = `${empId}_maxHours_${dateKey}`;
+            if (!dismissed.includes(warningId)) {
+              warnings.push({ id: warningId, empId, empName: emp.fullName, type: 'maxHours', date: dateKey,
+                detail: `§3 ArbZG (Tageshöchstarbeitszeit): ${Math.round(totalMins / 60 * 10) / 10}h gearbeitet (max. 10h erlaubt). Die Arbeitszeit darf 10 Stunden nicht überschreiten.` });
+            }
           }
         });
       }
@@ -776,8 +784,11 @@ function DashboardContent() {
           if (lastOut && firstIn) {
             const restMins = differenceInMinutes(parseISO(firstIn), parseISO(lastOut));
             if (restMins < 660 && restMins > 0) { // <11h
-              warnings.push({ empId, empName: emp.fullName, type: 'restPeriod', date: dayKeys[i],
-                detail: `Nur ${Math.round(restMins / 60 * 10) / 10}h Ruhezeit (min. 11h nötig)` });
+              const warningId = `${empId}_restPeriod_${dayKeys[i]}`;
+              if (!dismissed.includes(warningId)) {
+                warnings.push({ id: warningId, empId, empName: emp.fullName, type: 'restPeriod', date: dayKeys[i],
+                  detail: `§5 ArbZG (Ruhezeit): Nur ${Math.round(restMins / 60 * 10) / 10}h Ruhezeit zwischen zwei Arbeitstagen (min. 11h gesetzlich vorgeschrieben).` });
+              }
             }
           }
         }
@@ -788,8 +799,11 @@ function DashboardContent() {
         byDay.forEach((_, dateKey) => {
           const d = parseISO(dateKey);
           if (d.getDay() === 0) {
-            warnings.push({ empId, empName: emp.fullName, type: 'sunday', date: dateKey,
-              detail: 'Sonntagsarbeit – Ersatzruhetag innerhalb 2 Wochen nötig' });
+            const warningId = `${empId}_sunday_${dateKey}`;
+            if (!dismissed.includes(warningId)) {
+              warnings.push({ id: warningId, empId, empName: emp.fullName, type: 'sunday', date: dateKey,
+                detail: '§9 ArbZG (Sonntagsruhe): Arbeit an Sonntagen ist grundsätzlich verboten (Ausnahmen existieren). Es muss ein Ersatzruhetag innerhalb von 2 Wochen gewährt werden.' });
+            }
           }
         });
       }
@@ -902,7 +916,7 @@ function DashboardContent() {
     return `${h}:${String(m).padStart(2, '0')} h`;
   };
 
-  const buildEmployeeBlock = (emp: Employee, entries: TimeEntry[], empSchedules?: ScheduleEntry[], autoBreakDeduction?: boolean) => {
+  const buildEmployeeBlock = (emp: Employee, entries: TimeEntry[], empSchedules?: ScheduleEntry[], autoBreakDeduction?: boolean, exportOriginalData: boolean = false) => {
     const sorted = [...entries].sort((a, b) => a.clockInTime.localeCompare(b.clockInTime));
 
     // Group by calendar date of clockInTime
@@ -1065,23 +1079,31 @@ function DashboardContent() {
       const breakHintLabel = isPauseAddDay
         ? (pauseAddBreakLabel || plannedPauseLabel)
         : (autoBreakLabel || plannedPauseLabel);
-      const rowHint = (!isPauseAddDay && pauseDeficit > 0 && autoBreakLabel)
-        ? (hint ? hint + ' | ' : '') + (isObstgaertla ? '' : 'Pause auto: ') + autoBreakLabel
-        : (isPauseAddDay && pauseDeficit > 0 ? (hint ? hint + ' | ' : '') + (isObstgaertla ? '' : 'Pause Modus (AG bezahlt)') : hint);
+      const rowHint = isObstgaertla 
+        ? hint 
+        : ((!isPauseAddDay && pauseDeficit > 0 && autoBreakLabel)
+          ? (hint ? hint + ' | ' : '') + 'Pause auto: ' + autoBreakLabel
+          : (isPauseAddDay && pauseDeficit > 0 ? (hint ? hint + ' | ' : '') + 'Pause Modus (AG bezahlt)' : hint));
       rows += `${dateStr};${dayName};${format(firstIn, 'HH:mm')};${displayedLastOut ? format(displayedLastOut, 'HH:mm') : 'offen'};${fmtDur(displayedGrossMins)};${pauseLabel};${breakHintLabel};${netLabel};Arbeit;${rowHint}\n`;
       totalNetMins += effectiveNetMins;
       dailyData.push({ dateKey, effectiveNetMins, rowIndex: dailyData.length });
     });
 
-    // ── Überstunden-Verteilung (nur wenn emp.overtimeRedistribution aktiv) ──
-    if (emp.overtimeRedistribution && dailyData.length > 0) {
+    // ── Überstunden-Verteilung (nur wenn emp.overtimeRedistribution aktiv und nicht Original-Daten Export) ──
+    if (!exportOriginalData && emp.overtimeRedistribution && dailyData.length > 0) {
       const MAX_REG = 480; // 8h
       const MAX_DAY = 600; // 10h
       let excessPool = 0;
-      const adj = dailyData.map(d => ({ ...d, adjusted: d.effectiveNetMins, added: 0 }));
+      const redistStartDate = emp.overtimeRedistributionDate ? parseISO(emp.overtimeRedistributionDate) : new Date(0);
+      const redistEndDate = emp.overtimeRedistributionEndDate ? parseISO(emp.overtimeRedistributionEndDate) : new Date(8640000000000000);
+      const adj = dailyData.map(d => {
+        const entryDate = parseISO(d.dateKey);
+        const isAfterStart = entryDate >= redistStartDate && entryDate <= redistEndDate;
+        return { ...d, adjusted: d.effectiveNetMins, added: 0, isEligible: isAfterStart };
+      });
 
-      // Sammle Überstunden von Tagen > 8h
-      adj.forEach(d => {
+      // Sammle Überstunden von Tagen > 8h (nur anstehende Tage)
+      adj.filter(d => d.isEligible).forEach(d => {
         if (d.effectiveNetMins > MAX_REG) {
           excessPool += d.effectiveNetMins - MAX_REG;
           d.adjusted = MAX_REG;
@@ -1090,14 +1112,14 @@ function DashboardContent() {
 
       if (excessPool > 0) {
         // Verteile auf Tage mit 0h
-        adj.filter(d => d.adjusted === 0).forEach(d => {
+        adj.filter(d => d.isEligible && d.adjusted === 0).forEach(d => {
           if (excessPool <= 0) return;
           const add = Math.min(excessPool, MAX_REG);
           d.adjusted += add; d.added += add; excessPool -= add;
         });
         // Verteile Rest auf Tage < 10h
         if (excessPool > 0) {
-          adj.filter(d => d.adjusted > 0 && d.adjusted < MAX_DAY)
+          adj.filter(d => d.isEligible && d.adjusted > 0 && d.adjusted < MAX_DAY)
             .sort((a, b) => a.adjusted - b.adjusted)
             .forEach(d => {
               if (excessPool <= 0) return;
@@ -1106,20 +1128,17 @@ function DashboardContent() {
             });
         }
 
-        // CSV-Zeilen anpassen
+        // CSV-Zeilen anpassen (ohne Notizen)
         const rowLines = rows.split('\n').filter(r => r.length > 0);
         let workIdx = 0;
         const newRows = rowLines.map(line => {
           if (!line.includes(';Arbeit;')) return line;
           const d = adj[workIdx++];
-          if (!d) return line;
+          if (!d || !d.isEligible) return line;
           const parts = line.split(';');
-          if (d.added > 0) {
+          if (d.added > 0 || d.adjusted < d.effectiveNetMins) {
             parts[7] = fmtDur(d.adjusted);
-            parts[9] = (parts[9] ? parts[9] + ' | ' : '') + '+' + fmtDur(d.added) + ' umverteilt';
-          } else if (d.adjusted < d.effectiveNetMins) {
-            parts[7] = fmtDur(d.adjusted);
-            parts[9] = (parts[9] ? parts[9] + ' | ' : '') + '-' + fmtDur(d.effectiveNetMins - d.adjusted) + ' umverteilt';
+            // Keine Hinweise im Hinweis-Feld (parts[9]) generieren
           }
           return parts.join(';');
         });
@@ -1127,13 +1146,51 @@ function DashboardContent() {
       }
     }
 
-    const totalH = Math.floor(totalNetMins / 60);
-    const totalM = totalNetMins % 60;
+    let finalDisplayedTotalMins = totalNetMins;
+    if (!exportOriginalData && emp.overtimeRedistribution && dailyData.length > 0) {
+      // Calculate the sum of the column as it is actually displayed
+      // We need to parse the rows to be absolutely sure, or just use `totalNetMins` if no adjustments were made.
+      // Since `totalNetMins` is the sum of `effectiveNetMins`, if `excessPool` was fully redistributed, 
+      // the sum is identical. If it wasn't, the sum is lower.
+      // We can calculate the exact sum of the displayed Nettoarbeitszeit column:
+    }
+    
+    // Wir iterieren über die finalen `rows` um die tatsächliche Spaltensumme zu ermitteln
+    let actualColumnSumMins = 0;
+    let actualWorkDays = 0;
+    rows.split('\n').filter(r => r.length > 0 && r.includes(';Arbeit;')).forEach(line => {
+      const parts = line.split(';');
+      const netStr = parts[7]; // z.B. "8:30 h"
+      if (netStr && netStr.includes('h')) {
+        const [hStr, mStr] = netStr.replace('h', '').trim().split(':');
+        const rowMins = parseInt(hStr || '0', 10) * 60 + parseInt(mStr || '0', 10);
+        actualColumnSumMins += rowMins;
+        if (rowMins > 0) {
+          actualWorkDays++;
+        }
+      }
+    });
 
-    const summary =
-      `;;;;;;;\n` +
-      `GESAMT ${emp.fullName};;;;;;${fmtDur(totalNetMins)};;\n` +
-      `Resturlaub (aktuell): ${emp.vacationDays ?? 0} Tage | Urlaub gebucht: ${bookedVacDays} Tage | Krank gebucht: ${bookedSickDays} Tage\n`;
+    // Original-Arbeitstage aus den unmanipulierten Basisdaten zählen
+    let originalWorkDays = 0;
+    dailyData.forEach(d => {
+      if (d.effectiveNetMins > 0) originalWorkDays++;
+    });
+
+    // Fallback falls parsing fehlschlägt (sollte nicht passieren)
+    if (actualColumnSumMins === 0 && totalNetMins > 0) {
+      actualColumnSumMins = totalNetMins;
+    }
+
+    let summary = `;;;;;;;\n`;
+    if (isObstgaertla && !exportOriginalData && emp.overtimeRedistribution) {
+      summary += `GESAMT ${emp.fullName};;;;;;${fmtDur(actualColumnSumMins)};;\n`;
+      summary += `Arbeitstage;;;;;;${actualWorkDays} Tag(e);;\n`;
+    } else {
+      summary += `GESAMT ${emp.fullName};;;;;;${fmtDur(totalNetMins)};;\n`;
+      summary += `Arbeitstage;;;;;;${originalWorkDays} Tag(e);;\n`;
+    }
+    summary += `Resturlaub (aktuell): ${emp.vacationDays ?? 0} Tage | Urlaub gebucht: ${bookedVacDays} Tage | Krank gebucht: ${bookedSickDays} Tage\n`;
 
     return { header: HEADER, rows, summary, totalNetMins, bookedVacDays, bookedSickDays };
   };
@@ -1151,12 +1208,12 @@ function DashboardContent() {
     document.body.removeChild(link);
   };
 
-  const handleExportCSV = (emp: Employee) => {
+  const handleExportCSV = (emp: Employee, exportOriginalData: boolean = false) => {
     if (!timeEntries) return;
     try {
       const empEntries = timeEntries.filter(e => e.employeeId === emp.id);
       const empSchedules = (schedules || []).filter(s => s.employeeId === emp.id);
-      const { header, rows, summary } = buildEmployeeBlock(emp, empEntries, empSchedules, adminData?.autoBreakDeduction === true);
+      const { header, rows, summary } = buildEmployeeBlock(emp, empEntries, empSchedules, adminData?.autoBreakDeduction === true, exportOriginalData);
 
       let csv = `Mitarbeiter: ${emp.fullName}\n`;
       csv += `Position: ${emp.position || 'Mitarbeiter'}\n`;
@@ -1166,13 +1223,14 @@ function DashboardContent() {
       csv += rows;
       csv += summary;
 
-      triggerDownload(csv, `ZeitScan_${emp.fullName}_${format(new Date(), 'yyyy-MM-dd')}.csv`);
+      const filenameSuffix = exportOriginalData ? '_Originaldaten' : '';
+      triggerDownload(csv, `ZeitScan_${emp.fullName}_${format(new Date(), 'yyyy-MM-dd')}${filenameSuffix}.csv`);
     } catch (err) {
       console.error('Export failed', err);
     }
   };
 
-  const handleExportAllCSV = (filter: 'month' | 'year' | 'all' | 'custom' | 'custom-year', customDate?: Date) => {
+  const handleExportAllCSV = (filter: 'month' | 'year' | 'all' | 'custom' | 'custom-year', customDate?: Date, exportOriginalData: boolean = false) => {
     if (!timeEntries || !employees) return;
 
     try {
@@ -1223,7 +1281,7 @@ function DashboardContent() {
         if (empEntries.length === 0) return;
 
         const empSchedules2 = (schedules || []).filter(s => s.employeeId === emp.id);
-        const { header, rows, summary, totalNetMins, bookedVacDays, bookedSickDays } = buildEmployeeBlock(emp, empEntries, empSchedules2, adminData?.autoBreakDeduction === true);
+        const { header, rows, summary, totalNetMins, bookedVacDays, bookedSickDays } = buildEmployeeBlock(emp, empEntries, empSchedules2, adminData?.autoBreakDeduction === true, exportOriginalData);
 
         csv += `=== ${emp.fullName} | ${emp.position || 'Mitarbeiter'} ===\n`;
         csv += header;
@@ -1242,9 +1300,10 @@ function DashboardContent() {
       csv += `\n`;
       csv += `GESAMT ALLE;;${fmtDur(grandTotalMins)};;\n`;
 
-      let filename = `ZeitScan_Gesamtexport_${format(now, 'yyyy-MM-dd')}.csv`;
-      if (filter === 'custom' && customDate) filename = `ZeitScan_Export_${format(customDate, 'MMMM_yyyy', { locale: de })}.csv`;
-      else if (filter === 'custom-year' && customDate) filename = `ZeitScan_Jahresbericht_${format(customDate, 'yyyy')}.csv`;
+      const filenameSuffix = exportOriginalData ? '_Originaldaten' : '';
+      let filename = `ZeitScan_Gesamtexport_${format(now, 'yyyy-MM-dd')}${filenameSuffix}.csv`;
+      if (filter === 'custom' && customDate) filename = `ZeitScan_Export_${format(customDate, 'MMMM_yyyy', { locale: de })}${filenameSuffix}.csv`;
+      else if (filter === 'custom-year' && customDate) filename = `ZeitScan_Jahresbericht_${format(customDate, 'yyyy')}${filenameSuffix}.csv`;
 
       triggerDownload(csv, filename);
     } catch (err) {
@@ -1342,7 +1401,9 @@ function DashboardContent() {
       agreedHoursPeriod: editPeriod,
       vacationDays: Number(editVacation),
       sickDays: Number(editSickDays),
-      overtimeRedistribution: editOvertimeRedist,
+      overtimeRedistribution: !!editOvertimeRedistDate,
+      overtimeRedistributionDate: editOvertimeRedistDate || null,
+      overtimeRedistributionEndDate: editOvertimeRedistEndDate || null,
     });
     toast({ title: "Aktualisiert", description: "Daten wurden gespeichert." });
     setEditingEmployee(null);
@@ -1534,6 +1595,77 @@ function DashboardContent() {
     toast({ title: 'Schicht gelöscht' });
   };
 
+  const handlePrintSchedule = () => {
+    const days = Array.from({ length: 7 }, (_, i) => addDays(scheduleWeekStart, i));
+    const DAY_NAMES = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag'];
+    const activeEmployees = (employees || []).filter(e => !e.isArchived);
+    const weekLabel = `${format(scheduleWeekStart, 'dd. MMMM', { locale: de })} – ${format(addDays(scheduleWeekStart, 6), 'dd. MMMM yyyy', { locale: de })}`;
+
+    const headerCells = DAY_NAMES.map((name, i) =>
+      `<th>${name}<br><span class="date">${format(days[i], 'dd.MM.')}</span></th>`
+    ).join('');
+
+    const rows = activeEmployees.map(emp => {
+      const cells = days.map(day => {
+        const dateStr = format(day, 'yyyy-MM-dd');
+        const dayShifts = (schedules || []).filter(s => s.employeeId === emp.id && s.date === dateStr);
+        if (dayShifts.length === 0) return '<td></td>';
+        const shiftHtml = dayShifts.map(shift => {
+          const time = `${shift.shiftStart}${shift.shiftEnd ? '–' + shift.shiftEnd : ' →'}`;
+          const pause = shift.breakStart ? `<div class="pause">Pause: ${shift.breakStart}${shift.breakEnd ? '–' + shift.breakEnd : ''}</div>` : '';
+          const note = shift.note ? `<div class="note">${shift.note}</div>` : '';
+          return `<div class="shift">${time}${pause}${note}</div>`;
+        }).join('');
+        return `<td>${shiftHtml}</td>`;
+      }).join('');
+      return `<tr><td class="name">${emp.fullName}<span class="pos">${emp.position || ''}</span></td>${cells}</tr>`;
+    }).join('');
+
+    const html = `<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <title>Wochendienstplan – ${weekLabel}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Arial, sans-serif; font-size: 11px; color: #111; padding: 16px; }
+    h1 { font-size: 16px; margin-bottom: 4px; }
+    .subtitle { font-size: 11px; color: #555; margin-bottom: 14px; }
+    table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    th, td { border: 1px solid #ccc; padding: 5px 6px; vertical-align: top; }
+    th { background: #f0f0f0; font-size: 10px; text-align: center; }
+    th .date { font-size: 12px; font-weight: bold; color: #222; }
+    td.name { width: 140px; font-weight: bold; white-space: nowrap; vertical-align: middle; }
+    td.name .pos { display: block; font-weight: normal; font-size: 9px; color: #666; }
+    .shift { background: #1a56db; color: #fff; border-radius: 4px; padding: 3px 5px; margin-bottom: 3px; font-weight: bold; font-size: 10px; }
+    .pause { font-size: 9px; font-weight: normal; margin-top: 1px; opacity: 0.85; }
+    .note { font-size: 9px; font-weight: normal; margin-top: 1px; opacity: 0.75; font-style: italic; }
+    @media print {
+      body { padding: 8px; }
+      @page { margin: 10mm; size: A4 landscape; }
+    }
+  </style>
+</head>
+<body>
+  <h1>Wochendienstplan</h1>
+  <p class="subtitle">${weekLabel}</p>
+  <table>
+    <thead>
+      <tr><th style="width:140px">Mitarbeiter</th>${headerCells}</tr>
+    </thead>
+    <tbody>${rows}</tbody>
+  </table>
+  <script>window.onload = () => { window.print(); }<\/script>
+</body>
+</html>`;
+
+    const win = window.open('', '_blank');
+    if (win) {
+      win.document.write(html);
+      win.document.close();
+    }
+  };
+
   const handleDeleteAllData = () => {
     if (!firestore || !activeAdminUid || !employees || !timeEntries) return;
 
@@ -1707,13 +1839,13 @@ function DashboardContent() {
 
   const handleExecuteCustomExport = () => {
     const customDate = setYear(setMonth(new Date(), Number(customExportMonth)), Number(customExportYear));
-    handleExportAllCSV('custom', customDate);
+    handleExportAllCSV('custom', customDate, isCustomExportOriginal);
     setIsCustomExportOpen(false);
   };
 
   const handleExecuteYearlyExport = () => {
     const customDate = setYear(new Date(), Number(customYearExportYear));
-    handleExportAllCSV('custom-year', customDate);
+    handleExportAllCSV('custom-year', customDate, isCustomExportOriginal);
     setIsCustomYearExportOpen(false);
   };
 
@@ -1802,6 +1934,51 @@ function DashboardContent() {
                 </div>
               </div>
               <div className="flex flex-wrap gap-2">
+                {(adminData?.email === OBSTGAERTLA_EMAIL || (impersonateAdmin && allAdmins?.find(a => a.id === impersonateAdmin.uid)?.email === OBSTGAERTLA_EMAIL)) && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" className="rounded-xl bg-red-50 border-red-200 text-red-700 hover:bg-red-100">
+                        <Database className="w-4 h-4 mr-2" /> Ur-Daten Export <ChevronDown className="w-3 h-3 ml-2" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="rounded-xl min-w-[240px]">
+                      <DropdownMenuLabel className="text-red-700">Originaldaten (ohne Umverteilung)</DropdownMenuLabel>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onSelect={() => handleExportAllCSV('month', undefined, true)}>
+                        Aktueller Monat
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => handleExportAllCSV('year', undefined, true)}>
+                        Aktuelles Jahr
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        onSelect={(e) => {
+                          e.preventDefault();
+                          setIsCustomExportOriginal(true);
+                          setTimeout(() => setIsCustomExportOpen(true), 150);
+                        }}
+                        className="gap-2"
+                      >
+                        <CalendarDays className="w-4 h-4" /> Bestimmten Monat wählen...
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onSelect={(e) => {
+                          e.preventDefault();
+                          setIsCustomExportOriginal(true);
+                          setTimeout(() => setIsCustomYearExportOpen(true), 150);
+                        }}
+                        className="gap-2"
+                      >
+                        <FileText className="w-4 h-4" /> Jahresbericht wählen...
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onSelect={() => handleExportAllCSV('all', undefined, true)}>
+                        Gesamte Historie
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
+
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button variant="outline" className="rounded-xl bg-white border-2">
@@ -1821,6 +1998,7 @@ function DashboardContent() {
                     <DropdownMenuItem
                       onSelect={(e) => {
                         e.preventDefault();
+                        setIsCustomExportOriginal(false);
                         setTimeout(() => setIsCustomExportOpen(true), 150);
                       }}
                       className="gap-2"
@@ -1830,6 +2008,7 @@ function DashboardContent() {
                     <DropdownMenuItem
                       onSelect={(e) => {
                         e.preventDefault();
+                        setIsCustomExportOriginal(false);
                         setTimeout(() => setIsCustomYearExportOpen(true), 150);
                       }}
                       className="gap-2"
@@ -2237,7 +2416,8 @@ function DashboardContent() {
                                           setEditVacation(String(emp.vacationDays || 0));
                                           setEditSickDays(String(emp.sickDays || 0));
                                           setEditPauseAddMode(emp.pauseAddMode || false);
-                                          setEditOvertimeRedist(emp.overtimeRedistribution || false);
+                                          setEditOvertimeRedistDate(emp.overtimeRedistributionDate || '');
+                                          setEditOvertimeRedistEndDate(emp.overtimeRedistributionEndDate || '');
                                         }}>
                                           <Pencil className="w-4 h-4" />
                                         </Button>
@@ -2506,6 +2686,9 @@ function DashboardContent() {
                         </Button>
                         <Button variant="outline" size="icon" className="rounded-xl" onClick={() => setScheduleWeekStart(w => addDays(w, 7))}>
                           <ChevronRightIcon className="w-4 h-4" />
+                        </Button>
+                        <Button variant="outline" className="rounded-xl gap-2" onClick={handlePrintSchedule}>
+                          <Printer className="w-4 h-4" /> Drucken
                         </Button>
                         <Button className="rounded-xl gap-2" onClick={() => setIsAddShiftOpen(true)}>
                           <Plus className="w-4 h-4" /> Schicht eintragen
@@ -3133,26 +3316,44 @@ function DashboardContent() {
               </div>
             )}
 
-            {/* Überstunden-Verteilung Toggle */}
-            {(
+            {/* Überstunden-Verteilung Toggle — nur für Obstgärtla */}
+            {(adminData?.email === OBSTGAERTLA_EMAIL || (impersonateAdmin && allAdmins?.find(a => a.id === impersonateAdmin.uid)?.email === OBSTGAERTLA_EMAIL)) && (
               <div className="space-y-2">
-                <div className="flex items-center justify-between p-3 bg-blue-50 border border-blue-200 rounded-xl">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 bg-blue-50 border border-blue-200 rounded-xl gap-3">
                   <div className="flex items-center gap-2">
                     <Clock className="w-4 h-4 text-blue-600" />
                     <div>
                       <p className="text-sm font-bold text-blue-800">Überstunden verteilen</p>
-                      <p className="text-xs text-blue-700">Überstunden auf freie/kurze Tage aufteilen</p>
+                      <p className="text-[10px] text-blue-700">Überstunden auf freie/kurze Tage aufteilen</p>
                     </div>
                   </div>
-                  <Switch
-                    checked={editOvertimeRedist}
-                    onCheckedChange={setEditOvertimeRedist}
-                    id="edit-overtime-redist"
-                  />
+                  <div className="flex flex-col gap-2 self-stretch sm:self-auto items-end">
+                    <div className="flex items-center gap-2">
+                      <Label className="text-xs text-blue-800 whitespace-nowrap">Von:</Label>
+                      <Input
+                        type="date"
+                        value={editOvertimeRedistDate}
+                        onChange={(e) => setEditOvertimeRedistDate(e.target.value)}
+                        className="h-8 text-xs bg-white border-blue-200"
+                      />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Label className="text-xs text-blue-800 whitespace-nowrap">Bis:</Label>
+                      <Input
+                        type="date"
+                        value={editOvertimeRedistEndDate}
+                        onChange={(e) => setEditOvertimeRedistEndDate(e.target.value)}
+                        className="h-8 text-xs bg-white border-blue-200"
+                        placeholder="Optional"
+                      />
+                    </div>
+                  </div>
                 </div>
-                {editOvertimeRedist && (
+                {editOvertimeRedistDate && (
                   <p className="text-[10px] text-blue-600 px-1">
-                    ✅ Aktiv — Überstunden werden zuerst auf Tage ohne Arbeit verteilt, dann auf Tage mit &lt;10h.
+                    ✅ Aktiv ab {format(parseISO(editOvertimeRedistDate), 'dd.MM.yyyy')}
+                    {editOvertimeRedistEndDate ? ` bis ${format(parseISO(editOvertimeRedistEndDate), 'dd.MM.yyyy')}` : ''}
+                    — Überstunden in diesem Zeitraum werden im Export versteckt umverteilt.
                   </p>
                 )}
               </div>
@@ -3390,6 +3591,11 @@ function DashboardContent() {
                     <Button variant="ghost" size="sm" onClick={() => viewingLogsEmployee && handleExportCSV(viewingLogsEmployee)}>
                       <Download className="w-4 h-4 mr-2" /> CSV
                     </Button>
+                    {(adminData?.email === OBSTGAERTLA_EMAIL || (impersonateAdmin && allAdmins?.find(a => a.id === impersonateAdmin.uid)?.email === OBSTGAERTLA_EMAIL)) && (
+                      <Button variant="ghost" size="sm" className="text-red-600 hover:text-red-700 hover:bg-red-50" onClick={() => viewingLogsEmployee && handleExportCSV(viewingLogsEmployee, true)}>
+                        <Database className="w-4 h-4 mr-2" /> Ur-Daten CSV
+                      </Button>
+                    )}
                   </div>
                 </DialogTitle>
                 <DialogDescription>Alle Arbeitszeiten und Historien.</DialogDescription>
@@ -3784,14 +3990,27 @@ function DashboardContent() {
               <DialogDescription>Erkannte Verstöße gegen das Arbeitszeitgesetz.</DialogDescription>
             </DialogHeader>
             <div className="space-y-2 py-2">
-              {complianceWarnings.map((w, i) => (
-                <div key={i} className={`p-3 rounded-xl border text-sm ${
+              {complianceWarnings.map((w) => (
+                <div key={w.id} className={`p-3 rounded-xl border text-sm relative pr-10 ${
                   w.type === 'maxHours' ? 'bg-red-50 border-red-200' :
                   w.type === 'restPeriod' ? 'bg-orange-50 border-orange-200' :
                   'bg-blue-50 border-blue-200'
                 }`}>
-                  <div className="font-bold">{w.empName} — {format(parseISO(w.date), 'dd.MM.yyyy', { locale: de })}</div>
-                  <div className="text-muted-foreground">{w.detail}</div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="absolute top-2 right-2 h-6 w-6 rounded-full hover:bg-black/10"
+                    onClick={() => {
+                      if (firestore && activeAdminUid && !impersonateAdmin) {
+                        const newDismissed = [...(adminData?.dismissedWarnings || []), w.id];
+                        updateDocumentNonBlocking(doc(firestore, 'adminUsers', activeAdminUid), { dismissedWarnings: newDismissed });
+                      }
+                    }}
+                  >
+                    <X className="w-4 h-4 text-slate-500" />
+                  </Button>
+                  <div className="font-bold pr-4">{w.empName} — {format(parseISO(w.date), 'dd.MM.yyyy', { locale: de })}</div>
+                  <div className="text-muted-foreground mt-1 leading-snug">{w.detail}</div>
                 </div>
               ))}
             </div>

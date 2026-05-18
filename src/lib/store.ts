@@ -22,6 +22,10 @@ export type Employee = {
   pauseAddModeDeactivatedAt?: string | null;
   /** Obstgärtla special: Überstunden werden auf freie/kurze Tage verteilt */
   overtimeRedistribution?: boolean;
+  /** ISO date string: ab wann die Umverteilung aktiv ist */
+  overtimeRedistributionDate?: string;
+  /** ISO date string: bis wann die Umverteilung aktiv ist (optional) */
+  overtimeRedistributionEndDate?: string | null;
   createdAt: string;
 };
 
@@ -69,6 +73,8 @@ export type AdminUser = {
   sundayWorkDetection?: boolean;
   /** Automatic overtime calculation from agreedHours vs actual (default: true) */
   autoOvertimeCalc?: boolean;
+  /** Array of dismissed warning IDs */
+  dismissedWarnings?: string[];
 };
 
 export type ScheduleEntry = {
