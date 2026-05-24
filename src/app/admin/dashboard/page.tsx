@@ -705,7 +705,7 @@ function DashboardContent() {
       const weekdaysInMonth = Array.from({ length: daysInMonth }, (_, i) => {
         const d = new Date(now.getFullYear(), now.getMonth(), i + 1);
         return d.getDay() !== 0 && d.getDay() !== 6 ? 1 : 0;
-      }).reduce((a, b) => a + b, 0);
+      }).reduce<number>((a, b) => a + b, 0);
 
       let sollHours: number;
       if (emp.agreedHoursPeriod === 'weekly') {
@@ -1089,7 +1089,11 @@ function DashboardContent() {
       dailyData.push({ dateKey, effectiveNetMins, rowIndex: dailyData.length });
     });
 
-    // ── Überstunden-Verteilung (nur wenn emp.overtimeRedistribution aktiv und nicht Original-Daten Export) ──
+    // ── Überstunden-Verteilung: nur GESAMT-Zeile anpassen, einzelne Tageszeilen bleiben identisch zum Urdaten-Export ──
+    let redistributedTotalMins = totalNetMins;
+    let originalWorkDays = 0;
+    dailyData.forEach(d => { if (d.effectiveNetMins > 0) originalWorkDays++; });
+
     if (!exportOriginalData && emp.overtimeRedistribution && dailyData.length > 0) {
       const MAX_REG = 480; // 8h
       const MAX_DAY = 600; // 10h
@@ -1099,10 +1103,9 @@ function DashboardContent() {
       const adj = dailyData.map(d => {
         const entryDate = parseISO(d.dateKey);
         const isAfterStart = entryDate >= redistStartDate && entryDate <= redistEndDate;
-        return { ...d, adjusted: d.effectiveNetMins, added: 0, isEligible: isAfterStart };
+        return { ...d, adjusted: d.effectiveNetMins, isEligible: isAfterStart };
       });
 
-      // Sammle Überstunden von Tagen > 8h (nur anstehende Tage)
       adj.filter(d => d.isEligible).forEach(d => {
         if (d.effectiveNetMins > MAX_REG) {
           excessPool += d.effectiveNetMins - MAX_REG;
@@ -1111,88 +1114,36 @@ function DashboardContent() {
       });
 
       if (excessPool > 0) {
-        // Verteile auf Tage mit 0h
         adj.filter(d => d.isEligible && d.adjusted === 0).forEach(d => {
           if (excessPool <= 0) return;
           const add = Math.min(excessPool, MAX_REG);
-          d.adjusted += add; d.added += add; excessPool -= add;
+          d.adjusted += add; excessPool -= add;
         });
-        // Verteile Rest auf Tage < 10h
         if (excessPool > 0) {
           adj.filter(d => d.isEligible && d.adjusted > 0 && d.adjusted < MAX_DAY)
             .sort((a, b) => a.adjusted - b.adjusted)
             .forEach(d => {
               if (excessPool <= 0) return;
               const add = Math.min(excessPool, MAX_DAY - d.adjusted);
-              d.adjusted += add; d.added += add; excessPool -= add;
+              d.adjusted += add; excessPool -= add;
             });
         }
-
-        // CSV-Zeilen anpassen (ohne Notizen)
-        const rowLines = rows.split('\n').filter(r => r.length > 0);
-        let workIdx = 0;
-        const newRows = rowLines.map(line => {
-          if (!line.includes(';Arbeit;')) return line;
-          const d = adj[workIdx++];
-          if (!d || !d.isEligible) return line;
-          const parts = line.split(';');
-          if (d.added > 0 || d.adjusted < d.effectiveNetMins) {
-            parts[7] = fmtDur(d.adjusted);
-            // Keine Hinweise im Hinweis-Feld (parts[9]) generieren
-          }
-          return parts.join(';');
-        });
-        rows = newRows.join('\n') + '\n';
       }
-    }
 
-    let finalDisplayedTotalMins = totalNetMins;
-    if (!exportOriginalData && emp.overtimeRedistribution && dailyData.length > 0) {
-      // Calculate the sum of the column as it is actually displayed
-      // We need to parse the rows to be absolutely sure, or just use `totalNetMins` if no adjustments were made.
-      // Since `totalNetMins` is the sum of `effectiveNetMins`, if `excessPool` was fully redistributed, 
-      // the sum is identical. If it wasn't, the sum is lower.
-      // We can calculate the exact sum of the displayed Nettoarbeitszeit column:
-    }
-    
-    // Wir iterieren über die finalen `rows` um die tatsächliche Spaltensumme zu ermitteln
-    let actualColumnSumMins = 0;
-    let actualWorkDays = 0;
-    rows.split('\n').filter(r => r.length > 0 && r.includes(';Arbeit;')).forEach(line => {
-      const parts = line.split(';');
-      const netStr = parts[7]; // z.B. "8:30 h"
-      if (netStr && netStr.includes('h')) {
-        const [hStr, mStr] = netStr.replace('h', '').trim().split(':');
-        const rowMins = parseInt(hStr || '0', 10) * 60 + parseInt(mStr || '0', 10);
-        actualColumnSumMins += rowMins;
-        if (rowMins > 0) {
-          actualWorkDays++;
-        }
-      }
-    });
-
-    // Original-Arbeitstage aus den unmanipulierten Basisdaten zählen
-    let originalWorkDays = 0;
-    dailyData.forEach(d => {
-      if (d.effectiveNetMins > 0) originalWorkDays++;
-    });
-
-    // Fallback falls parsing fehlschlägt (sollte nicht passieren)
-    if (actualColumnSumMins === 0 && totalNetMins > 0) {
-      actualColumnSumMins = totalNetMins;
+      redistributedTotalMins = adj.reduce((sum, d) => sum + d.adjusted, 0);
     }
 
     let summary = `;;;;;;;\n`;
     if (isObstgaertla && !exportOriginalData && emp.overtimeRedistribution) {
-      summary += `GESAMT ${emp.fullName};;;;;;${fmtDur(actualColumnSumMins)};;\n`;
-      summary += `Arbeitstage;;;;;;${actualWorkDays} Tag(e);;\n`;
+      summary += `GESAMT ${emp.fullName};;;;;;${fmtDur(redistributedTotalMins)};;\n`;
+      summary += `Arbeitstage;;;;;;${originalWorkDays} Tag(e);;\n`;
     } else {
       summary += `GESAMT ${emp.fullName};;;;;;${fmtDur(totalNetMins)};;\n`;
       summary += `Arbeitstage;;;;;;${originalWorkDays} Tag(e);;\n`;
     }
     summary += `Resturlaub (aktuell): ${emp.vacationDays ?? 0} Tage | Urlaub gebucht: ${bookedVacDays} Tage | Krank gebucht: ${bookedSickDays} Tage\n`;
 
-    return { header: HEADER, rows, summary, totalNetMins, bookedVacDays, bookedSickDays };
+    return { header: HEADER, rows, summary, totalNetMins: redistributedTotalMins, bookedVacDays, bookedSickDays };
   };
 
   const triggerDownload = (csv: string, filename: string) => {
