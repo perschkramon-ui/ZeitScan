@@ -662,7 +662,8 @@ function DashboardContent() {
         entries.forEach(e => {
           let inT = parseISO(e.clockInTime).getTime();
           const outT = e.clockOutTime ? parseISO(e.clockOutTime).getTime() : now.getTime();
-          if (scheduledStartMs && inT < scheduledStartMs && outT >= scheduledStartMs) inT = scheduledStartMs;
+          const isApprovedEarly = (e as any).earlyClockInStatus === 'approved';
+          if (scheduledStartMs && inT < scheduledStartMs && outT >= scheduledStartMs && !isApprovedEarly) inT = scheduledStartMs;
           netMins += Math.max(0, (outT - inT) / 60000);
           firstInTime = Math.min(firstInTime, inT);
           lastOutTime = Math.max(lastOutTime, outT);
@@ -913,7 +914,8 @@ function DashboardContent() {
       entries.forEach(e => {
         let inT = parseISO(e.clockInTime).getTime();
         const outT = e.clockOutTime ? parseISO(e.clockOutTime).getTime() : now.getTime();
-        if (schStartMs && inT < schStartMs && outT >= schStartMs) inT = schStartMs;
+        const isApprovedEarly = (e as any).earlyClockInStatus === 'approved';
+        if (schStartMs && inT < schStartMs && outT >= schStartMs && !isApprovedEarly) inT = schStartMs;
         netMins += Math.max(0, (outT - inT) / 60000);
         firstInTime = Math.min(firstInTime, inT);
         lastOutTime = Math.max(lastOutTime, outT);
@@ -966,7 +968,7 @@ function DashboardContent() {
     });
 
     const HEADER = 'Datum;Wochentag;Kommen;Gehen;Bruttozeit;Tatsächl. Pause;Geplante Pause;Nettoarbeitszeit;Kategorie;Hinweis\n';
-    let rows = '';
+    const allRowLines: string[] = [];
     let totalNetMins = 0;
     let bookedVacDays = 0;
     let bookedSickDays = 0;
@@ -979,7 +981,7 @@ function DashboardContent() {
 
     const isObstgaertla = adminData?.email === OBSTGAERTLA_EMAIL || (impersonateAdmin && allAdmins?.find(a => a.id === impersonateAdmin.uid)?.email === OBSTGAERTLA_EMAIL);
 
-    const dailyData: { dateKey: string; effectiveNetMins: number; rowIndex: number }[] = [];
+    const dailyData: { dateKey: string; effectiveNetMins: number; rowIndex: number; rowPrefix: string; rowSuffix: string }[] = [];
 
     [...byDate.keys()].sort().forEach(dateKey => {
       const dayEntries = byDate.get(dateKey)!;
@@ -1002,7 +1004,7 @@ function DashboardContent() {
           : dateStr;
         const numDays = clockOut ? differenceInDays(clockOut, parseISO(e.clockInTime)) + 1 : 1;
         const label = e.entryType === 'VACATION' ? 'Urlaub' : 'Krank';
-        rows += `${dateCellStr};${dayName};-;-;-;-;-;${numDays} Tag(e);${label};\n`;
+        allRowLines.push(`${dateCellStr};${dayName};-;-;-;-;-;${numDays} Tag(e);${label};\n`);
         if (e.entryType === 'VACATION') bookedVacDays += numDays;
         else bookedSickDays += numDays;
       });
@@ -1025,16 +1027,18 @@ function DashboardContent() {
 
       // Net = sum of each individual work segment
       let netMins = 0;
+      const hasApprovedEarlyEntry = workEntries.some(e => (e as any).earlyClockInStatus === 'approved');
       workEntries.forEach(e => {
         let inT = parseISO(e.clockInTime);
         const outT = e.clockOutTime ? parseISO(e.clockOutTime) : new Date();
-        if (scheduledStart && inT < scheduledStart && outT >= scheduledStart) {
+        const isApprovedEarly = (e as any).earlyClockInStatus === 'approved';
+        if (scheduledStart && inT < scheduledStart && outT >= scheduledStart && !isApprovedEarly) {
           inT = scheduledStart;
         }
         netMins += Math.max(0, differenceInMinutes(outT, inT));
       });
       // Also cap firstIn for gross/display — but only if the shift extends past scheduledStart
-      if (scheduledStart && firstIn < scheduledStart && lastOut && lastOut >= scheduledStart) {
+      if (scheduledStart && firstIn < scheduledStart && lastOut && lastOut >= scheduledStart && !hasApprovedEarlyEntry) {
         firstIn = scheduledStart;
       }
 
@@ -1109,38 +1113,43 @@ function DashboardContent() {
         : '-';
       const hint = !lastOut ? 'noch aktiv' : (lastEntry.exitType === 'PAUSE' ? 'endet in Pause' : '');
 
-      const netLabel = fmtDur(effectiveNetMins);
       const pauseLabel = isPauseAddDay
         ? (pauseMins > 0 ? fmtDur(pauseMins) + (isObstgaertla ? '' : ' (AG bezahlt)') : '-')
         : (pauseMins > 0 ? fmtDur(pauseMins) + (pauseDeficit > 0 && !isObstgaertla ? ' (+' + pauseDeficit + 'min auto)' : '') : '-');
       const breakHintLabel = isPauseAddDay
         ? (pauseAddBreakLabel || plannedPauseLabel)
         : (autoBreakLabel || plannedPauseLabel);
-      const rowHint = isObstgaertla 
-        ? hint 
+      const rowHint = isObstgaertla
+        ? hint
         : ((!isPauseAddDay && pauseDeficit > 0 && autoBreakLabel)
           ? (hint ? hint + ' | ' : '') + 'Pause auto: ' + autoBreakLabel
           : (isPauseAddDay && pauseDeficit > 0 ? (hint ? hint + ' | ' : '') + 'Pause Modus (AG bezahlt)' : hint));
-      rows += `${dateStr};${dayName};${format(firstIn, 'HH:mm')};${displayedLastOut ? format(displayedLastOut, 'HH:mm') : 'offen'};${fmtDur(displayedGrossMins)};${pauseLabel};${breakHintLabel};${netLabel};Arbeit;${rowHint}\n`;
+      const rowPrefix = `${dateStr};${dayName};${format(firstIn, 'HH:mm')};${displayedLastOut ? format(displayedLastOut, 'HH:mm') : 'offen'};${fmtDur(displayedGrossMins)};${pauseLabel};${breakHintLabel};`;
+      const rowSuffix = `;Arbeit;${rowHint}\n`;
+      const rowIdx = allRowLines.length;
+      allRowLines.push('');
       totalNetMins += effectiveNetMins;
-      dailyData.push({ dateKey, effectiveNetMins, rowIndex: dailyData.length });
+      dailyData.push({ dateKey, effectiveNetMins, rowIndex: rowIdx, rowPrefix, rowSuffix });
     });
 
-    // ── Überstunden-Verteilung: nur GESAMT-Zeile anpassen, einzelne Tageszeilen bleiben identisch zum Urdaten-Export ──
+    // ── Überstunden-Verteilung: Tageszeilen anpassen (nur Netto-Spalte), Pausen bleiben unverändert ──
     let redistributedTotalMins = totalNetMins;
     let originalWorkDays = 0;
     dailyData.forEach(d => { if (d.effectiveNetMins > 0) originalWorkDays++; });
 
-    if (!exportOriginalData && emp.overtimeRedistribution && dailyData.length > 0) {
+    const doRedistribute = !exportOriginalData && emp.overtimeRedistribution && dailyData.length > 0;
+    const adjustedMap = new Map<number, number>();
+
+    if (doRedistribute) {
       const MAX_REG = 480; // 8h
       const MAX_DAY = 600; // 10h
       let excessPool = 0;
       const redistStartDate = emp.overtimeRedistributionDate ? parseISO(emp.overtimeRedistributionDate) : new Date(0);
       const redistEndDate = emp.overtimeRedistributionEndDate ? parseISO(emp.overtimeRedistributionEndDate) : new Date(8640000000000000);
-      const adj = dailyData.map(d => {
+      const adj = dailyData.map((d, i) => {
         const entryDate = parseISO(d.dateKey);
         const isAfterStart = entryDate >= redistStartDate && entryDate <= redistEndDate;
-        return { ...d, adjusted: d.effectiveNetMins, isEligible: isAfterStart };
+        return { idx: i, ...d, adjusted: d.effectiveNetMins, isEligible: isAfterStart };
       });
 
       adj.filter(d => d.isEligible).forEach(d => {
@@ -1167,11 +1176,19 @@ function DashboardContent() {
         }
       }
 
+      adj.forEach(d => adjustedMap.set(d.idx, d.adjusted));
       redistributedTotalMins = adj.reduce((sum, d) => sum + d.adjusted, 0);
     }
 
+    // Build final rows: fill in work row placeholders with (adjusted) net values
+    dailyData.forEach((d, i) => {
+      const netMinsForRow = doRedistribute ? (adjustedMap.get(i) ?? d.effectiveNetMins) : d.effectiveNetMins;
+      allRowLines[d.rowIndex] = d.rowPrefix + fmtDur(netMinsForRow) + d.rowSuffix;
+    });
+    const rows = allRowLines.join('');
+
     let summary = `;;;;;;;\n`;
-    if (isObstgaertla && !exportOriginalData && emp.overtimeRedistribution) {
+    if (isObstgaertla && doRedistribute) {
       summary += `GESAMT ${emp.fullName};;;;;;${fmtDur(redistributedTotalMins)};;\n`;
       summary += `Arbeitstage;;;;;;${originalWorkDays} Tag(e);;\n`;
     } else {
