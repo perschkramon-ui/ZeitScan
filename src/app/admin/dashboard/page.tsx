@@ -660,10 +660,9 @@ function DashboardContent() {
         }
         entries.forEach(e => {
           let inT = parseISO(e.clockInTime).getTime();
-          // Cap to scheduled start
-          if (scheduledStartMs && inT < scheduledStartMs) inT = scheduledStartMs;
           const outT = e.clockOutTime ? parseISO(e.clockOutTime).getTime() : now.getTime();
-          netMins += (outT - inT) / 60000;
+          if (scheduledStartMs && inT < scheduledStartMs && outT >= scheduledStartMs) inT = scheduledStartMs;
+          netMins += Math.max(0, (outT - inT) / 60000);
           firstInTime = Math.min(firstInTime, inT);
           lastOutTime = Math.max(lastOutTime, outT);
         });
@@ -692,6 +691,37 @@ function DashboardContent() {
   }, [timeEntries, period, isFeatureActive, adminData, employees, schedules]);
 
   // ── Überstunden-Berechnung (Ist − Soll pro Monat, kumulativ) ──
+  // ── Frühzeitiges Einstempeln erkennen (>30min vor Schichtbeginn, nur heute) ──
+  const earlyClockIns = useMemo(() => {
+    const alerts: { empName: string; clockInTime: string; shiftStart: string; diffMins: number }[] = [];
+    if (!employees || !timeEntries || !schedules) return alerts;
+    const todayStr = format(new Date(), 'yyyy-MM-dd');
+    const todaySchedules = schedules.filter(s => s.date === todayStr);
+    if (todaySchedules.length === 0) return alerts;
+
+    timeEntries.forEach(entry => {
+      if (entry.entryType && entry.entryType !== 'WORK') return;
+      const clockIn = parseISO(entry.clockInTime);
+      if (format(clockIn, 'yyyy-MM-dd') !== todayStr) return;
+      const schedule = todaySchedules.find(s => s.employeeId === entry.employeeId);
+      if (!schedule?.shiftStart) return;
+      const [sh, sm] = schedule.shiftStart.split(':').map(Number);
+      const scheduledStart = new Date(clockIn);
+      scheduledStart.setHours(sh, sm, 0, 0);
+      const diffMins = Math.round((scheduledStart.getTime() - clockIn.getTime()) / 60000);
+      if (diffMins > 30) {
+        const emp = employees.find(e => e.id === entry.employeeId);
+        alerts.push({
+          empName: emp?.fullName || entry.employeeId,
+          clockInTime: format(clockIn, 'HH:mm'),
+          shiftStart: schedule.shiftStart,
+          diffMins,
+        });
+      }
+    });
+    return alerts;
+  }, [employees, timeEntries, schedules]);
+
   const overtimeMap = useMemo(() => {
     const map = new Map<string, number>(); // empId -> cumulative overtime hours
     if (!employees || !timeEntries || isObstgaertlaAdmin) return map;
@@ -874,9 +904,9 @@ function DashboardContent() {
       }
       entries.forEach(e => {
         let inT = parseISO(e.clockInTime).getTime();
-        if (schStartMs && inT < schStartMs) inT = schStartMs;
         const outT = e.clockOutTime ? parseISO(e.clockOutTime).getTime() : now.getTime();
-        netMins += (outT - inT) / 60000;
+        if (schStartMs && inT < schStartMs && outT >= schStartMs) inT = schStartMs;
+        netMins += Math.max(0, (outT - inT) / 60000);
         firstInTime = Math.min(firstInTime, inT);
         lastOutTime = Math.max(lastOutTime, outT);
       });
@@ -990,14 +1020,13 @@ function DashboardContent() {
       workEntries.forEach(e => {
         let inT = parseISO(e.clockInTime);
         const outT = e.clockOutTime ? parseISO(e.clockOutTime) : new Date();
-        // Cap clock-in to scheduled start if MA clocked in early
-        if (scheduledStart && inT < scheduledStart) {
+        if (scheduledStart && inT < scheduledStart && outT >= scheduledStart) {
           inT = scheduledStart;
         }
         netMins += Math.max(0, differenceInMinutes(outT, inT));
       });
-      // Also cap firstIn for gross/display
-      if (scheduledStart && firstIn < scheduledStart) {
+      // Also cap firstIn for gross/display — but only if the shift extends past scheduledStart
+      if (scheduledStart && firstIn < scheduledStart && lastOut && lastOut >= scheduledStart) {
         firstIn = scheduledStart;
       }
 
@@ -2104,6 +2133,23 @@ function DashboardContent() {
               </CardContent>
             </Card>
           ) : (
+            <>
+            {earlyClockIns.length > 0 && (
+              <div className="bg-red-50 border-2 border-red-400 rounded-2xl p-4 mb-4 shadow-sm">
+                <div className="flex items-center gap-2 mb-2">
+                  <AlertTriangle className="w-5 h-5 text-red-600" />
+                  <span className="font-bold text-red-700 text-lg">Frühzeitiges Einstempeln</span>
+                </div>
+                <div className="space-y-1">
+                  {earlyClockIns.map((a, i) => (
+                    <p key={i} className="text-sm text-red-800">
+                      <strong>{a.empName}</strong> hat sich um <strong>{a.clockInTime} Uhr</strong> eingestempelt — <strong>{a.diffMins} Min.</strong> vor Dienstbeginn ({a.shiftStart} Uhr)
+                    </p>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <Tabs defaultValue="personal" className="space-y-8">
               <TabsList className="bg-white/50 p-1.5 rounded-2xl h-14 shadow-sm border-none">
                 <TabsTrigger value="personal" className="rounded-xl px-6 h-full data-[state=active]:bg-white data-[state=active]:shadow-md">
@@ -2897,6 +2943,7 @@ function DashboardContent() {
                 </Card>
               </TabsContent>
             </Tabs>
+            </>
           )}
         </div>
       </div>

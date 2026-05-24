@@ -50,6 +50,8 @@ function PortalContent() {
   const [isStatusLoading, setIsStatusLoading] = useState(false);
   const clockInLockRef = useRef(false);
   const [isExitDialogOpen, setIsExitDialogOpen] = useState(false);
+  const [isEarlyConfirmOpen, setIsEarlyConfirmOpen] = useState(false);
+  const [earlyMinutes, setEarlyMinutes] = useState(0);
   const [locationBlocked, setLocationBlocked] = useState(false);
   const [restPeriodBlocked, setRestPeriodBlocked] = useState(false);
   const [restRemaining, setRestRemaining] = useState('');
@@ -258,6 +260,39 @@ function PortalContent() {
     return () => unsubscribe();
   }, [selectedId, firestore, adminId, user, adminData?.maxDailyHoursMode, adminData?.restPeriodMode, toast]);
 
+  const submitClockIn = (employee: Employee, clockInTime: Date, successMsg: string) => {
+    if (!firestore || !adminId) return;
+    const entryData = {
+      adminId: adminId,
+      employeeId: employee.id,
+      employeeName: employee.fullName,
+      clockInTime: clockInTime.toISOString(),
+      clockOutTime: null,
+      sourceSystem: 'Terminal',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    addDocumentNonBlocking(collection(firestore, 'timeEntries'), entryData)
+      .then(() => {
+        showSuccess(successMsg);
+        clockInLockRef.current = false;
+      })
+      .catch(() => {
+        toast({ title: "Fehler", description: "Einstempeln fehlgeschlagen.", variant: "destructive" });
+        setIsProcessing(false);
+        clockInLockRef.current = false;
+      });
+  };
+
+  const handleEarlyConfirm = () => {
+    setIsEarlyConfirmOpen(false);
+    const employee = employees?.find(e => e.id === selectedId);
+    if (!employee) return;
+    setIsProcessing(true);
+    clockInLockRef.current = true;
+    submitClockIn(employee, new Date(), `eingestempelt (${earlyMinutes} Min. vor Dienstbeginn, bestätigt)`);
+  };
+
   const handleClockAction = async (action: 'IN' | 'OUT', exitType?: 'PAUSE' | 'END') => {
     if (!selectedId || !firestore || !adminId) return;
 
@@ -341,34 +376,25 @@ function PortalContent() {
         const scheduledTime = new Date();
         scheduledTime.setHours(startHour, startMinute, 0, 0);
 
-        // Vorzeitiges Einstempeln
         if (clockInTime < scheduledTime) {
+          const diffMs = scheduledTime.getTime() - clockInTime.getTime();
+          const diffMins = Math.round(diffMs / 60000);
+
+          if (diffMins > 30) {
+            // >30min früh: Bestätigung erforderlich
+            setEarlyMinutes(diffMins);
+            setIsEarlyConfirmOpen(true);
+            setIsProcessing(false);
+            clockInLockRef.current = false;
+            return;
+          }
+          // ≤30min früh: auf Schichtbeginn cappen
           clockInTime = scheduledTime;
           successMsg = `eingestempelt (Dienstbeginn auf ${selectedEmployeeSchedule.shiftStart} Uhr angepasst)`;
         }
       }
 
-      const entryData = {
-        adminId: adminId,
-        employeeId: employee.id,
-        employeeName: employee.fullName,
-        clockInTime: clockInTime.toISOString(),
-        clockOutTime: null,
-        sourceSystem: 'Terminal',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-      
-      addDocumentNonBlocking(collection(firestore, 'timeEntries'), entryData)
-        .then(() => {
-          showSuccess(successMsg);
-          clockInLockRef.current = false;
-        })
-        .catch(() => {
-          toast({ title: "Fehler", description: "Einstempeln fehlgeschlagen.", variant: "destructive" });
-          setIsProcessing(false);
-          clockInLockRef.current = false;
-        });
+      submitClockIn(employee, clockInTime, successMsg);
     } else {
       if (!activeEntryId) {
         setIsProcessing(false);
@@ -574,6 +600,32 @@ function PortalContent() {
           </div>
         </CardContent>
       </Card>
+
+      <Dialog open={isEarlyConfirmOpen} onOpenChange={setIsEarlyConfirmOpen}>
+        <DialogContent className="rounded-2xl max-sm:w-[95vw] max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-destructive flex items-center gap-2">
+              <AlertCircle className="w-5 h-5" />
+              Vorzeitiges Einstempeln
+            </DialogTitle>
+            <DialogDescription className="text-base pt-2">
+              Sie stempeln <strong>{earlyMinutes} Minuten</strong> vor Ihrem geplanten Dienstbeginn
+              {selectedEmployeeSchedule && <> ({selectedEmployeeSchedule.shiftStart} Uhr)</>} ein.
+            </DialogDescription>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground px-1">
+            Wurde dies mit Ihrem Vorgesetzten abgeklärt?
+          </p>
+          <DialogFooter className="flex flex-col gap-2 sm:flex-col">
+            <Button onClick={handleEarlyConfirm} className="w-full rounded-xl h-12">
+              Ja, wurde abgeklärt — Einstempeln
+            </Button>
+            <Button variant="ghost" onClick={() => setIsEarlyConfirmOpen(false)} className="w-full">
+              Abbrechen
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={isExitDialogOpen} onOpenChange={setIsExitDialogOpen}>
         <DialogContent className="rounded-2xl max-sm:w-[95vw] max-w-sm">
