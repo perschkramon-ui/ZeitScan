@@ -124,7 +124,8 @@ import {
   ShieldCheck,
   Settings2,
   Moon,
-  Database
+  Database,
+  CheckCircle2
 } from 'lucide-react';
 import {
   startOfWeek,
@@ -693,7 +694,7 @@ function DashboardContent() {
   // ── Überstunden-Berechnung (Ist − Soll pro Monat, kumulativ) ──
   // ── Frühzeitiges Einstempeln erkennen (>30min vor Schichtbeginn, nur heute) ──
   const earlyClockIns = useMemo(() => {
-    const alerts: { empName: string; clockInTime: string; shiftStart: string; diffMins: number }[] = [];
+    const alerts: { entryId: string; empName: string; clockInTime: string; shiftStart: string; diffMins: number }[] = [];
     if (!employees || !timeEntries || !schedules) return alerts;
     const todayStr = format(new Date(), 'yyyy-MM-dd');
     const todaySchedules = schedules.filter(s => s.date === todayStr);
@@ -701,6 +702,7 @@ function DashboardContent() {
 
     timeEntries.forEach(entry => {
       if (entry.entryType && entry.entryType !== 'WORK') return;
+      if ((entry as any).earlyClockInStatus) return;
       const clockIn = parseISO(entry.clockInTime);
       if (format(clockIn, 'yyyy-MM-dd') !== todayStr) return;
       const schedule = todaySchedules.find(s => s.employeeId === entry.employeeId);
@@ -712,6 +714,7 @@ function DashboardContent() {
       if (diffMins > 30) {
         const emp = employees.find(e => e.id === entry.employeeId);
         alerts.push({
+          entryId: entry.id,
           empName: emp?.fullName || entry.employeeId,
           clockInTime: format(clockIn, 'HH:mm'),
           shiftStart: schedule.shiftStart,
@@ -721,6 +724,11 @@ function DashboardContent() {
     });
     return alerts;
   }, [employees, timeEntries, schedules]);
+
+  const handleEarlyClockInAction = (entryId: string, status: 'approved' | 'rejected') => {
+    if (!firestore) return;
+    updateDocumentNonBlocking(doc(firestore, 'timeEntries', entryId), { earlyClockInStatus: status });
+  };
 
   const overtimeMap = useMemo(() => {
     const map = new Map<string, number>(); // empId -> cumulative overtime hours
@@ -2140,11 +2148,21 @@ function DashboardContent() {
                   <AlertTriangle className="w-5 h-5 text-red-600" />
                   <span className="font-bold text-red-700 text-lg">Frühzeitiges Einstempeln</span>
                 </div>
-                <div className="space-y-1">
-                  {earlyClockIns.map((a, i) => (
-                    <p key={i} className="text-sm text-red-800">
-                      <strong>{a.empName}</strong> hat sich um <strong>{a.clockInTime} Uhr</strong> eingestempelt — <strong>{a.diffMins} Min.</strong> vor Dienstbeginn ({a.shiftStart} Uhr)
-                    </p>
+                <div className="space-y-3">
+                  {earlyClockIns.map((a) => (
+                    <div key={a.entryId} className="flex items-center justify-between gap-4 bg-white/60 rounded-xl p-3">
+                      <p className="text-sm text-red-800">
+                        <strong>{a.empName}</strong> hat sich um <strong>{a.clockInTime} Uhr</strong> eingestempelt — <strong>{a.diffMins} Min.</strong> vor Dienstbeginn ({a.shiftStart} Uhr)
+                      </p>
+                      <div className="flex gap-2 shrink-0">
+                        <Button size="sm" className="rounded-xl bg-green-600 hover:bg-green-700 text-white" onClick={() => handleEarlyClockInAction(a.entryId, 'approved')}>
+                          <CheckCircle2 className="w-4 h-4 mr-1" /> OK
+                        </Button>
+                        <Button size="sm" variant="destructive" className="rounded-xl" onClick={() => handleEarlyClockInAction(a.entryId, 'rejected')}>
+                          <X className="w-4 h-4 mr-1" /> Ablehnen
+                        </Button>
+                      </div>
+                    </div>
                   ))}
                 </div>
               </div>
