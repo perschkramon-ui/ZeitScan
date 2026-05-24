@@ -3765,8 +3765,13 @@ function DashboardContent() {
                       ? (schedules || []).find(s => s.employeeId === viewingLogsEmployee?.id && s.date === entryDateKey && s.breakStart)
                       : null;
 
+                    const isManualEntry = entry.sourceSystem?.includes('Nachtrag') || entry.sourceSystem?.includes('Manuell');
+                    const isEditedAfter = !isManualEntry && entry.updatedAt && entry.clockOutTime &&
+                      new Date(entry.updatedAt).getTime() > new Date(entry.clockOutTime).getTime() + 120000;
+                    const wasEdited = isManualEntry || isEditedAfter;
+
                     return (
-                      <TableRow key={entry.id} className={entryType === 'VACATION' ? 'bg-blue-50/30' : entryType === 'SICK' ? 'bg-orange-50/30' : ''}>
+                      <TableRow key={entry.id} className={`${entryType === 'VACATION' ? 'bg-blue-50/30' : entryType === 'SICK' ? 'bg-orange-50/30' : ''} ${wasEdited ? 'bg-amber-50/40' : ''}`}>
                         <TableCell className="font-medium">
                           <div className="flex items-center gap-2">
                             {isMultiDay ? (
@@ -3777,6 +3782,16 @@ function DashboardContent() {
                               </div>
                             ) : (
                               format(clockIn, 'dd.MM.yyyy', { locale: de })
+                            )}
+                            {wasEdited && (
+                              <Tooltip>
+                                <TooltipTrigger>
+                                  <Pencil className="w-3 h-3 text-amber-600" />
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  {isManualEntry ? 'Manuell eingetragen' : 'Nachträglich bearbeitet'}
+                                </TooltipContent>
+                              </Tooltip>
                             )}
                           </div>
                         </TableCell>
