@@ -1143,39 +1143,41 @@ function DashboardContent() {
     const adjustedMap = new Map<number, number>();
 
     if (doRedistribute) {
-      const MAX_REG = 480; // 8h
-      const MAX_DAY = 600; // 10h
+      const MAX_DAY = 600; // 10h — Tagesmaximum für die Verteilung
       let excessPool = 0;
       const redistStartDate = emp.overtimeRedistributionDate ? parseISO(emp.overtimeRedistributionDate) : new Date(0);
       const redistEndDate = emp.overtimeRedistributionEndDate ? parseISO(emp.overtimeRedistributionEndDate) : new Date(8640000000000000);
       const adj = dailyData.map((d, i) => {
         const entryDate = parseISO(d.dateKey);
-        const isAfterStart = entryDate >= redistStartDate && entryDate <= redistEndDate;
-        return { idx: i, ...d, adjusted: d.effectiveNetMins, isEligible: isAfterStart };
+        const isEligible = entryDate >= redistStartDate && entryDate <= redistEndDate;
+        return { idx: i, ...d, adjusted: d.effectiveNetMins, isEligible };
       });
 
-      adj.filter(d => d.isEligible).forEach(d => {
-        if (d.effectiveNetMins > MAX_REG) {
-          excessPool += d.effectiveNetMins - MAX_REG;
-          d.adjusted = MAX_REG;
-        }
+      // Phase 1: Tage über 10h kappen — Überschuss in Pool
+      adj.filter(d => d.isEligible && d.effectiveNetMins > MAX_DAY).forEach(d => {
+        excessPool += d.effectiveNetMins - MAX_DAY;
+        d.adjusted = MAX_DAY;
       });
 
+      // Phase 2: Pool auf Tage unter 10h verteilen (von wenig nach viel füllen)
       if (excessPool > 0) {
-        adj.filter(d => d.isEligible && d.adjusted === 0).forEach(d => {
-          if (excessPool <= 0) return;
-          const add = Math.min(excessPool, MAX_REG);
-          d.adjusted += add; excessPool -= add;
-        });
-        if (excessPool > 0) {
-          adj.filter(d => d.isEligible && d.adjusted > 0 && d.adjusted < MAX_DAY)
-            .sort((a, b) => a.adjusted - b.adjusted)
-            .forEach(d => {
-              if (excessPool <= 0) return;
-              const add = Math.min(excessPool, MAX_DAY - d.adjusted);
-              d.adjusted += add; excessPool -= add;
-            });
-        }
+        adj
+          .filter(d => d.isEligible && d.adjusted < MAX_DAY)
+          .sort((a, b) => a.adjusted - b.adjusted)
+          .forEach(d => {
+            if (excessPool <= 0) return;
+            const canAdd = Math.min(excessPool, MAX_DAY - d.adjusted);
+            d.adjusted += canAdd;
+            excessPool -= canAdd;
+          });
+      }
+
+      // Phase 3: Falls Pool-Rest nicht verteilbar (alle Tage bei 10h) →
+      // Gesamtsumme erhalten: Überschuss auf den ersten gekappt-Tag zurückgeben
+      if (excessPool > 0) {
+        const firstCapped = adj.find(d => d.isEligible && d.effectiveNetMins > MAX_DAY);
+        if (firstCapped) firstCapped.adjusted = firstCapped.effectiveNetMins;
+        excessPool = 0;
       }
 
       adj.forEach(d => adjustedMap.set(d.idx, d.adjusted));
