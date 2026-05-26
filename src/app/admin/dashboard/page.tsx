@@ -163,6 +163,7 @@ import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } f
 import type { Employee, AdminUser, TimeEntry, ScheduleEntry } from '@/lib/store';
 import { addDays, subDays, startOfWeek as startOfWeekFn, isToday } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
+import { useAutoUpdate } from '@/hooks/use-auto-update';
 
 const MONTHS_LIST = [
   "Januar", "Februar", "März", "April", "Mai", "Juni",
@@ -282,6 +283,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
 }
 
 function DashboardContent() {
+  useAutoUpdate();
   const [searchTerm, setSearchTerm] = useState('');
   const [showArchived, setShowArchived] = useState(false);
   const [period, setPeriod] = useState<'weekly' | 'monthly'>('monthly');
