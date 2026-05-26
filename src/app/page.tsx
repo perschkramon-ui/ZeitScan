@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { QrCode, ShieldCheck } from 'lucide-react';
 import { PWAInstallButton } from '@/components/pwa-install-button';
+import { MaAutoRedirect } from '@/components/MaAutoRedirect';
 
 export default function Home() {
   return (
@@ -62,6 +63,9 @@ export default function Home() {
 
       {/* PWA Install Button / Banner */}
       <PWAInstallButton />
+
+      {/* Leitet MA-Portal-Nutzer automatisch auf ihre Seite weiter */}
+      <MaAutoRedirect />
     </div>
   );
 }

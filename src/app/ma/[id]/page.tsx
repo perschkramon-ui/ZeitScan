@@ -69,7 +69,12 @@ function MAAppContent({ id }: { id: string }) {
   // Admin settings for location lock
   const [adminSettings, setAdminSettings] = useState<AdminUser | null>(null);
 
-  // 1. Auto-login anonymously
+  // 1. MA-ID in localStorage speichern (für PWA-Start-Redirect)
+  useEffect(() => {
+    localStorage.setItem('maEmployeeId', id);
+  }, [id]);
+
+  // 2. Auto-login anonymously
   useEffect(() => {
     if (auth && !auth.currentUser) {
       signInAnonymously(auth).catch((err) => {
