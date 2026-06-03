@@ -341,6 +341,7 @@ function DashboardContent() {
   // Custom Export Selection State
   const [isCustomExportOpen, setIsCustomExportOpen] = useState(false);
   const [isCustomExportOriginal, setIsCustomExportOriginal] = useState(false);
+  const [isCustomExportPdf, setIsCustomExportPdf] = useState(false);
   const [customExportMonth, setCustomExportMonth] = useState(String(new Date().getMonth()));
   const [customExportYear, setCustomExportYear] = useState(String(new Date().getFullYear()));
 
@@ -1846,15 +1847,127 @@ function DashboardContent() {
     }
   };
 
+  // ── PDF Export (angepasste Stunden, nur Obstgärtla) ──
+  const handleExportPDF = (filter: 'month' | 'year' | 'all' | 'custom' | 'custom-year', customDate?: Date) => {
+    if (!timeEntries || !employees) return;
+    try {
+      const now = new Date();
+      let startDate: Date;
+      let endDate: Date;
+      if (filter === 'month') { startDate = startOfMonth(now); endDate = endOfMonth(now); }
+      else if (filter === 'year') { startDate = startOfYear(now); endDate = endOfYear(now); }
+      else if (filter === 'custom' && customDate) { startDate = startOfMonth(customDate); endDate = endOfMonth(customDate); }
+      else if (filter === 'custom-year' && customDate) { startDate = startOfYear(customDate); endDate = endOfYear(customDate); }
+      else { startDate = new Date(0); endDate = new Date(now.getFullYear() + 10, 0, 1); }
+
+      const periodLabel = filter === 'all' ? 'Gesamte Historie'
+        : `${format(startDate, 'dd.MM.yyyy')} – ${format(endDate, 'dd.MM.yyyy')}`;
+
+      const filteredEntries = [...timeEntries].filter(e => {
+        const d = parseISO(e.clockInTime);
+        return (isAfter(d, startDate) || isSameDay(d, startDate)) && (isBefore(d, endDate) || isSameDay(d, endDate));
+      });
+
+      const activeEmployees = [...employees]
+        .filter(e => !e.isArchived)
+        .sort((a, b) => a.fullName.localeCompare(b.fullName));
+
+      const COLS = ['Datum', 'Tag', 'Kommen', 'Gehen', 'Brutto', 'Pause (tat.)', 'Pause (gep.)', 'Netto', 'Kategorie', 'Hinweis'];
+
+      let empSections = '';
+      const overviewRows: { name: string; netto: string; urlaub: number; krank: number; resturlaub: number }[] = [];
+
+      activeEmployees.forEach(emp => {
+        const empEntries = filteredEntries.filter(e => e.employeeId === emp.id);
+        if (empEntries.length === 0) return;
+        const empSchedules2 = (schedules || []).filter(s => s.employeeId === emp.id);
+        const { rows, summary, totalNetMins, bookedVacDays, bookedSickDays } = buildEmployeeBlock(
+          emp, empEntries, empSchedules2, adminData?.autoBreakDeduction === true, false
+        );
+        overviewRows.push({ name: emp.fullName, netto: fmtDur(totalNetMins), urlaub: bookedVacDays, krank: bookedSickDays, resturlaub: emp.vacationDays ?? 0 });
+
+        const dataRows = rows.split('\n').filter(r => r.trim());
+        const htmlRows = dataRows.map(row => {
+          const cells = row.split(';');
+          const cat = cells[8]?.trim() ?? '';
+          const isSpecial = cat && cat !== 'Arbeit';
+          return `<tr class="${isSpecial ? 'special' : ''}">
+            ${cells.slice(0, 10).map((c, i) => `<td${i === 7 ? ' class="netto"' : ''}>${c || '&nbsp;'}</td>`).join('')}
+          </tr>`;
+        }).join('');
+
+        const summaryLines = summary.split('\n').filter(r => r.trim() && r.includes(';'));
+        const summaryHtml = summaryLines.map(row => {
+          const cells = row.split(';');
+          return `<tr class="sum-row">
+            <td colspan="7">${cells[0] || ''}</td>
+            <td class="netto">${cells[6] || ''}</td>
+            <td colspan="2">${cells[7] || ''}</td>
+          </tr>`;
+        }).join('');
+
+        empSections += `
+          <div class="emp">
+            <h2>${emp.fullName} <span class="pos">${emp.position || 'Mitarbeiter'}</span></h2>
+            <table>
+              <thead><tr>${COLS.map(c => `<th>${c}</th>`).join('')}</tr></thead>
+              <tbody>${htmlRows}${summaryHtml}</tbody>
+            </table>
+          </div>`;
+      });
+
+      const overviewHtml = overviewRows.map(r =>
+        `<tr><td>${r.name}</td><td class="netto">${r.netto}</td><td>${r.urlaub} Tage</td><td>${r.krank} Tage</td><td>${r.resturlaub} Tage</td></tr>`
+      ).join('');
+
+      const html = `<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8">
+        <title>ZeitScan Export – ${periodLabel}</title>
+        <style>
+          *{box-sizing:border-box;margin:0;padding:0}
+          body{font-family:Arial,sans-serif;font-size:9px;color:#111;padding:14px}
+          h1{font-size:16px;margin-bottom:3px;color:#1a1a2e}
+          .meta{font-size:9px;color:#666;margin-bottom:18px}
+          .emp{margin-bottom:28px}
+          h2{font-size:12px;font-weight:bold;color:#1a56db;border-bottom:2px solid #1a56db;padding-bottom:3px;margin-bottom:6px}
+          h2 .pos{font-size:9px;font-weight:normal;color:#888}
+          h3{font-size:11px;margin:20px 0 6px;color:#333}
+          table{width:100%;border-collapse:collapse;margin-bottom:6px}
+          th{background:#1a56db;color:#fff;font-size:8px;padding:3px 4px;text-align:left}
+          td{border-bottom:1px solid #eee;padding:2px 4px;font-size:8px;vertical-align:middle}
+          tr:nth-child(even){background:#f7f9ff}
+          tr.special{background:#fef9e7}
+          td.netto{font-weight:bold;color:#1a56db}
+          tr.sum-row td{background:#dbeafe;font-weight:bold;border-top:2px solid #1a56db}
+          .ov th{background:#374151}
+          @media print{body{padding:6px}@page{margin:10mm;size:A4 portrait}.emp{page-break-inside:avoid}}
+        </style></head><body>
+        <h1>ZeitScan – Stundenexport (angepasst, max. 10h/Tag)</h1>
+        <p class="meta">Zeitraum: ${periodLabel} &nbsp;|&nbsp; Exportiert: ${format(now, 'dd.MM.yyyy HH:mm')} &nbsp;|&nbsp; Umverteilung aktiv</p>
+        ${empSections}
+        <h3>Gesamtübersicht alle Mitarbeiter</h3>
+        <table class="ov">
+          <thead><tr><th>Mitarbeiter</th><th>Netto gesamt</th><th>Urlaub</th><th>Krank</th><th>Resturlaub</th></tr></thead>
+          <tbody>${overviewHtml}</tbody>
+        </table>
+        <script>window.onload=()=>{window.print()}<\/script>
+      </body></html>`;
+
+      const win = window.open('', '_blank');
+      if (win) { win.document.write(html); win.document.close(); }
+    } catch (err) { console.error('PDF export failed', err); }
+  };
+
   const handleExecuteCustomExport = () => {
     const customDate = setYear(setMonth(new Date(), Number(customExportMonth)), Number(customExportYear));
-    handleExportAllCSV('custom', customDate, isCustomExportOriginal);
+    if (isCustomExportPdf) { handleExportPDF('custom', customDate); setIsCustomExportPdf(false); }
+    else { handleExportAllCSV('custom', customDate, isCustomExportOriginal); }
     setIsCustomExportOpen(false);
   };
 
   const handleExecuteYearlyExport = () => {
     const customDate = setYear(new Date(), Number(customYearExportYear));
-    handleExportAllCSV('custom-year', customDate, isCustomExportOriginal);
+    if (isCustomExportPdf) { handleExportPDF('custom-year', customDate); setIsCustomExportPdf(false); }
+    else { handleExportAllCSV('custom-year', customDate, isCustomExportOriginal); }
     setIsCustomYearExportOpen(false);
   };
 
@@ -1982,6 +2095,52 @@ function DashboardContent() {
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem onSelect={() => handleExportAllCSV('all', undefined, true)}>
+                        Gesamte Historie
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
+
+                {(adminData?.email === OBSTGAERTLA_EMAIL || (impersonateAdmin && allAdmins?.find(a => a.id === impersonateAdmin.uid)?.email === OBSTGAERTLA_EMAIL)) && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" className="rounded-xl bg-purple-50 border-purple-200 text-purple-700 hover:bg-purple-100">
+                        <FileText className="w-4 h-4 mr-2" /> Export (PDF) <ChevronDown className="w-3 h-3 ml-2" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="rounded-xl min-w-[240px]">
+                      <DropdownMenuLabel className="text-purple-700">Angepasste Stunden als PDF</DropdownMenuLabel>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onSelect={() => handleExportPDF('month')}>
+                        Aktueller Monat
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => handleExportPDF('year')}>
+                        Aktuelles Jahr
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        onSelect={(e) => {
+                          e.preventDefault();
+                          setIsCustomExportPdf(true);
+                          setIsCustomExportOriginal(false);
+                          setTimeout(() => setIsCustomExportOpen(true), 150);
+                        }}
+                        className="gap-2"
+                      >
+                        <CalendarDays className="w-4 h-4" /> Bestimmten Monat wählen...
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onSelect={(e) => {
+                          e.preventDefault();
+                          setIsCustomExportPdf(true);
+                          setTimeout(() => setIsCustomYearExportOpen(true), 150);
+                        }}
+                        className="gap-2"
+                      >
+                        <FileText className="w-4 h-4" /> Jahresbericht wählen...
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onSelect={() => handleExportPDF('all')}>
                         Gesamte Historie
                       </DropdownMenuItem>
                     </DropdownMenuContent>
