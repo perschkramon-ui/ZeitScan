@@ -1941,8 +1941,8 @@ function DashboardContent() {
           .ov th{background:#374151}
           @media print{body{padding:6px}@page{margin:10mm;size:A4 portrait}.emp{page-break-inside:avoid}}
         </style></head><body>
-        <h1>ZeitScan – Stundenexport (angepasst, max. 10h/Tag)</h1>
-        <p class="meta">Zeitraum: ${periodLabel} &nbsp;|&nbsp; Exportiert: ${format(now, 'dd.MM.yyyy HH:mm')} &nbsp;|&nbsp; Umverteilung aktiv</p>
+        <h1>ZeitScan – Stundenexport</h1>
+        <p class="meta">Zeitraum: ${periodLabel} &nbsp;|&nbsp; Exportiert: ${format(now, 'dd.MM.yyyy HH:mm')}</p>
         ${empSections}
         <h3>Gesamtübersicht alle Mitarbeiter</h3>
         <table class="ov">
