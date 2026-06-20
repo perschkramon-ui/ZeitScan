@@ -49,15 +49,14 @@ async function fixMayClockIns(dryRun) {
   }
   console.log(`Admin gefunden: ${adminId}`);
 
-  // 2. Query all May 2026 time entries for this admin
-  const may2026Start = '2026-05-01T00:00:00';
-  const may2026End = '2026-06-01T00:00:00';
-
+  // 2. Query all time entries for this admin, filter May in code
   const entriesSnap = await db.collection('timeEntries')
     .where('adminId', '==', adminId)
-    .where('clockInTime', '>=', may2026Start)
-    .where('clockInTime', '<', may2026End)
     .get();
+
+  // Filter to May 2026 only
+  const may2026Start = new Date('2026-05-01T00:00:00');
+  const may2026End = new Date('2026-06-01T00:00:00');
 
   console.log(`${entriesSnap.size} Mai-Einträge gefunden.\n`);
 
@@ -70,6 +69,9 @@ async function fixMayClockIns(dryRun) {
 
     const clockIn = new Date(data.clockInTime);
     const clockOut = new Date(data.clockOutTime);
+
+    // Skip entries outside May 2026
+    if (clockIn < may2026Start || clockIn >= may2026End) return;
 
     if (clockIn > clockOut) {
       const createdAt = data.createdAt ? new Date(data.createdAt) : null;
