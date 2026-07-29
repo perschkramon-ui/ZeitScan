@@ -2,6 +2,23 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Read the global rules first (applies to EVERY session, especially cloud/phone)
+
+The cross-project rules (token policy, project-memory duty, **error classes with
+guards**) are NOT in this file — they live in the master repo
+`https://github.com/perschkramon-ui/claude-global`, the single source of truth.
+They are written in German, like the operator's other rules.
+
+- **Local sessions** (PC/laptop) get them automatically via a SessionStart hook
+  that syncs them to `~/.claude/CLAUDE.md`. Nothing to do.
+- **Cloud sessions** (including from the phone via claude.ai/code) have no access
+  to the PC filesystem and get them ONLY this way — clone it during onboarding
+  in addition to this repo and read it as the global rules:
+  ```bash
+  gh repo clone perschkramon-ui/claude-global
+  ```
+  Without this step the session works without the error-class guards.
+
 ## Commands
 
 ```bash
